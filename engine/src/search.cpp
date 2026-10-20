@@ -725,6 +725,10 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
 
         if (bestValue >= beta)
         {
+            // QsFailFirm : le stand-pat rend la moyenne avec beta plutot que
+            // l'evaluation entiere (« fail-firm » de Stockfish).
+            if (QsFailFirm && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY)
+                bestValue = (bestValue + beta) / 2;
             if (!ttHit)
                 tte->save(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
                           DEPTH_ENTRY_TT + 1, Move::none(), unadjustedStaticEval,
@@ -837,6 +841,9 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
         assert(!MoveList<LEGAL>(pos).size());
         return mated_in(ss->ply);
     }
+
+    if (QsFailFirm && bestValue >= beta && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY)
+        bestValue = (bestValue + beta) / 2;
 
     tte->save(posKey, value_to_tt(bestValue, ss->ply), pvHit,
               bestValue >= beta    ? BOUND_LOWER

@@ -36,3 +36,4 @@ BadQuiets|BadQuiets=14000|0 3|6|1000|10|
 MultiCutCorr|MultiCutCorr=1|0 3|6|1000|10|
 TtCutHistSf|TtCutHistSf=1|0 3|6|1000|10|
 RfpOwn|RfpOwn=1|0 3|6|1000|10|
+QsFailFirm|QsFailFirm=1|0 3|6|1000|10|

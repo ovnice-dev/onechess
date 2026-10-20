@@ -94,6 +94,7 @@
     X(MultiCutCorr,                   0,     0,     1) \
     X(TtCutHistSf,                    0,     0,     1) \
     X(RfpOwn,                         0,     0,     1) \
+    X(QsFailFirm,                     0,     0,     1) \
     X(EvalDiffHist,                   0,     0,     1) \
     X(HistDecay,                      0,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
