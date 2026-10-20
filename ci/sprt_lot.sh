@@ -26,7 +26,9 @@ while [ $v -le "$VMAX" ]; do
   done
   [ -z "$id" ] && { echo "run introuvable" >> "$J"; exit 1; }
   echo "$(date '+%H:%M') vague $v lancee : run $id" >> "$J"
-  while [ "$("$G" run view "$id" -R "$REPO" --json status -q .status)" != completed ]; do sleep 120; done
+  # fini quand tous les morceaux le sont (un ancien travail « bilan » peut
+  # rester en file sans que cela compte)
+  while [ "$("$G" run view "$id" -R "$REPO" --json jobs -q '[.jobs[] | select(.name | startswith("morceau"))] as $m | if ($m | length) == 0 then -1 else ([$m[] | select(.status != "completed")] | length) end' 2>/dev/null)" != 0 ]; do sleep 120; done
   "$G" run download "$id" -R "$REPO" -p 'etat-*' -D "$D/v$v" >/dev/null 2>&1
   b=$(python ci/bilan_lot.py --bornes $BORNES "$D")
   echo "$(date '+%H:%M') apres vague $v :" >> "$J"; echo "$b" | sed 's/^/    /' >> "$J"

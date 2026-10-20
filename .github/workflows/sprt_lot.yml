@@ -3,7 +3,8 @@ run-name: ${{ inputs.nom }} (vague ${{ inputs.vague }}, ${{ inputs.morceaux }} m
 
 # Un meme SPRT reparti sur plusieurs machines : chaque morceau joue un nombre
 # fixe de paires (sans arret anticipe), puis le bilan additionne les comptes
-# pentanomiaux et calcule le LLR. Si le test n'a pas conclu, on lance la vague
+# pentanomiaux et calcule le LLR (sur le PC, par ci/bilan_lot.py : un
+# travail de bilan ici attendrait une machine libre derriere les autres tests). Si le test n'a pas conclu, on lance la vague
 # suivante (meme nom, vague+1) : ci/bilan_lot.py additionne toutes les vagues.
 #   bash ci/sprt_lot.sh Nom "Opt=1" [morceaux] [parties par morceau] [vague]
 on:
@@ -80,15 +81,3 @@ jobs:
           name: etat-${{ inputs.nom }}-v${{ inputs.vague }}-m${{ matrix.m }}
           path: ci_out/
 
-  bilan:
-    needs: morceau
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: etat-*
-          path: ci_in
-      - name: bilan
-        run: python3 ci/bilan_lot.py --bornes ${{ inputs.bornes }} ci_in | tee -a "$GITHUB_STEP_SUMMARY"
