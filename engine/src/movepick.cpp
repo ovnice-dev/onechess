@@ -80,6 +80,13 @@ MovePicker::MovePicker(const Position&              p,
     refutations[1] = killers[1];
     refutations[2] = (cm != killers[0] && cm != killers[1]) ? cm : Move::none();
 
+    // Simplification a tester (Stockfish les a retires) : sans killers, sans
+    // contre-coup. Les coups restent tries par leurs historiques.
+    if (Tune::NoKillers)
+        refutations[0] = refutations[1] = Move::none();
+    if (Tune::NoCounter)
+        refutations[2] = Move::none();
+
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
     else

@@ -73,6 +73,23 @@
     X(ThreatHist,                     1,     0,     1) \
     X(FhRecovery,                     0,     0,     1) \
     X(NmpPriorFh,                     0,     0,   200) \
+    X(FutValue,                       0,     0,     1) \
+    X(CapFutility,                    0,     0,     1) \
+    X(ProbcutSf,                      0,     0,     1) \
+    X(SmallProbcut,                   0,     0,   800) \
+    X(IirSf,                          0,     0,     1) \
+    X(ExtSf,                          0,     0,     1) \
+    X(NegExtSf,                       0,     0,     1) \
+    X(MultiCutSf,                     0,     0,     1) \
+    X(ImprovingBeta,                  0,     0,     1) \
+    X(RfpOppW,                        0,     0,   200) \
+    X(PostLmrSf,                      0,     0,     1) \
+    X(NoKillers,                      0,     0,     1) \
+    X(NoCounter,                      0,     0,     1) \
+    X(LmrFrac,                        0,     0,     1) \
+    X(LmrAllScale,                    0,     0,     1) \
+    X(LmrAlphaEval,                   0,     0,     1) \
+    X(LmrCutoffSf,                    0,     0,     1) \
     X(EvalDiffHist,                   0,     0,     1) \
     X(HistDecay,                      0,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
