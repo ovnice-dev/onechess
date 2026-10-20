@@ -359,6 +359,14 @@ void Search::init() {
                                                    / (LmrDivisor / 100.0)));
 }
 
+// Regle de surprise (Triumviratus) : la position qu'on attendait apres notre
+// coup et la reponse prevue. Si l'adversaire joue autre chose, on se donne
+// plus de temps (TmSurprisePct). Inerte a 100.
+namespace {
+Key ExpectedKey = 0;
+int ExpectedPly = -1;
+}
+
 // ---------------------------------------------------------------------------
 // Approfondissement iteratif. Chaque thread execute cette boucle sur sa propre
 // copie de la position ; seule la table de transposition les relie.
@@ -401,6 +409,9 @@ void Thread::iterative_deepening() {
                 e = std::int16_t(int(e) * 729 / 1024);
 
     rootPos.set_thread(this);
+
+    const bool surprise = is_main() && ExpectedPly == rootPos.game_ply()
+                       && rootPos.key() != ExpectedKey;
 
     if (rootMoves.empty())
     {
@@ -566,6 +577,9 @@ void Thread::iterative_deepening() {
                                      0.8, 1.5);
             prevIterScore = bestValue;
 
+            if (surprise)
+                factor *= TmSurprisePct / 100.0;
+
             // Un seul coup legal : rien a chercher
             const bool forced = TmSingleMs && rootMoves.size() == 1
                              && Time.elapsed() >= std::min<TimePoint>(TmSingleMs, Time.optimum());
@@ -619,6 +633,23 @@ void Thread::iterative_deepening() {
 
     const Thread* best = Threads.best_thread();
     const bool    c960 = rootPos.is_chess960();
+
+    // Position attendue au prochain coup : notre coup, puis la reponse prevue
+    ExpectedPly = -1;
+    if (best->rootMoves[0].pv.size() > 1)
+    {
+        StateInfo s1, s2;
+        const Move m1 = best->rootMoves[0].pv[0], m2 = best->rootMoves[0].pv[1];
+        rootPos.do_move(m1, s1);
+        if (rootPos.pseudo_legal(m2) && rootPos.legal(m2))
+        {
+            rootPos.do_move(m2, s2);
+            ExpectedKey = rootPos.key();
+            ExpectedPly = rootPos.game_ply();
+            rootPos.undo_move(m2);
+        }
+        rootPos.undo_move(m1);
+    }
 
     std::cout << "bestmove " << UCI::move(best->rootMoves[0].pv[0], c960);
     if (best->rootMoves[0].pv.size() > 1)

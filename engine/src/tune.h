@@ -117,6 +117,7 @@
     X(TmInstMul,                  250,     0,  1000) \
     X(TmClockPct,                 900,     0,  1000) \
     X(TmSfAlloc,                      0,     0,     1) \
+    X(TmSurprisePct,                100,   100,   250) \
                                                        \
     X(Rule50Damp,                     0,     0,   512)
 
