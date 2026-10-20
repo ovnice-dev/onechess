@@ -5,6 +5,7 @@
 #include <cassert>
 
 #include "movegen.h"
+#include "syzygy.h"
 #include "search.h"
 #include "tt.h"
 #include "uci.h"
@@ -123,6 +124,26 @@ void ThreadPool::start_thinking(Position&                 pos,
         if (limits.searchmoves.empty()
             || std::count(limits.searchmoves.begin(), limits.searchmoves.end(), m))
             rootMoves.emplace_back(m);
+
+    // Tables de finales a la racine. La sonde DTZ n'exige pas un compteur de
+    // 50 coups nul : elle est faite pour la position qu'on va reellement
+    // jouer, et rend un coup qui gagne EN RESPECTANT la regle des 50 coups.
+    // On ne garde que ce coup -- pour TOUS les threads : avant le 20-10 seul
+    // le principal etait filtre, et un helper plus profond pouvait faire jouer
+    // un autre coup.
+    if (Syzygy::max_pieces()
+        && popcount(pos.pieces()) <= std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"])))
+    {
+        int        wdl    = 0;
+        const Move tbMove = Syzygy::probe_root(pos, bool(Options["Syzygy50MoveRule"]), &wdl);
+        const auto it     = std::find(rootMoves.begin(), rootMoves.end(), tbMove);
+        if (tbMove != Move::none() && it != rootMoves.end())
+        {
+            const Search::RootMove keep = *it;
+            rootMoves.clear();
+            rootMoves.push_back(keep);
+        }
+    }
 
     // On garde la propriete de la liste d'etats : la detection de repetition
     // remonte dans l'historique reel de la partie, pas seulement dans l'arbre.

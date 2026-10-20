@@ -96,16 +96,16 @@ bool probe_wdl(const Position& pos, int ply, bool use50MoveRule, Value* v) {
     switch (r)
     {
     case TB_LOSS :
-        *v = VALUE_TB_LOSS_IN_MAX_PLY + ply;
+        *v = -VALUE_TB + ply;
         break;
     case TB_BLESSED_LOSS :
-        *v = use50MoveRule ? VALUE_DRAW : VALUE_TB_LOSS_IN_MAX_PLY + ply;
+        *v = use50MoveRule ? VALUE_DRAW : -VALUE_TB + ply;
         break;
     case TB_CURSED_WIN :
-        *v = use50MoveRule ? VALUE_DRAW : VALUE_TB_WIN_IN_MAX_PLY - ply;
+        *v = use50MoveRule ? VALUE_DRAW : VALUE_TB - ply;
         break;
     case TB_WIN :
-        *v = VALUE_TB_WIN_IN_MAX_PLY - ply;
+        *v = VALUE_TB - ply;
         break;
     default :
         *v = VALUE_DRAW;

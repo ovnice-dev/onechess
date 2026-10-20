@@ -372,6 +372,10 @@ std::string UCI::value(Value v) {
 
     if (std::abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
         ss << "cp " << v;
+    // Gain ou perte des tables de finales : pas un mat compte en coups. On
+    // l'annonce en centipions, 20 000 moins la distance, comme Stockfish.
+    else if (std::abs(v) < VALUE_MATE_IN_MAX_PLY)
+        ss << "cp " << (v > 0 ? 20000 - (VALUE_TB - v) : -20000 + (VALUE_TB + v));
     else
         ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v) / 2;
 

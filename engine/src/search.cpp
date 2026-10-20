@@ -424,35 +424,8 @@ void Thread::iterative_deepening() {
         return;
     }
 
-    // ------------------------------------------------ tables de finale, racine
-    // La sonde DTZ n'exige pas, elle, un compteur de 50 coups nul : elle est
-    // faite pour la position qu'on va reellement jouer. C'est elle qui rend
-    // les tables utiles, car la sonde WDL de la recherche ne se declenche
-    // qu'apres une prise -- une fois dans l'arbre, le compteur n'est plus nul.
-    //
-    // Elle rend un coup qui gagne EN RESPECTANT la regle des 50 coups. Un coup
-    // optimal en distance au mat, lui, peut laisser filer le gain.
-    if (is_main() && Syzygy::max_pieces()
-        && popcount(rootPos.pieces())
-             <= std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"])))
-    {
-        int        wdl    = 0;
-        const Move tbMove = Syzygy::probe_root(rootPos, bool(Options["Syzygy50MoveRule"]), &wdl);
-
-        if (tbMove != Move::none())
-        {
-            const auto it = std::find(rootMoves.begin(), rootMoves.end(), tbMove);
-            if (it != rootMoves.end())
-            {
-                // On ne garde que ce coup : la recherche n'a plus qu'a le
-                // confirmer, et ne peut plus choisir moins bien.
-                const RootMove keep = *it;
-                rootMoves.clear();
-                rootMoves.push_back(keep);
-                tbHits.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
-    }
+    // Le filtre des tables de finales a la racine est fait une fois pour tous
+    // les threads, dans ThreadPool::start_thinking().
 
     const int multiPV = 1;
     (void) multiPV;

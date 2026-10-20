@@ -45,7 +45,12 @@ constexpr Value VALUE_INFINITE  = 32001;
 constexpr Value VALUE_MATE      = 32000;
 constexpr Value VALUE_MATE_IN_MAX_PLY  = VALUE_MATE - MAX_PLY;
 constexpr Value VALUE_MATED_IN_MAX_PLY = -VALUE_MATE_IN_MAX_PLY;
-constexpr Value VALUE_TB_WIN_IN_MAX_PLY  = VALUE_MATE_IN_MAX_PLY - 1;
+// Gains et pertes prouves par les tables de finales : VALUE_TB - ply, juste
+// sous les mats, et au-dessus du seuil VALUE_TB_WIN_IN_MAX_PLY (comme chez
+// Stockfish). Avant le 20-10, le gain valait VALUE_TB_WIN_IN_MAX_PLY - ply,
+// c'est-a-dire SOUS le seuil : la recherche le prenait pour une evaluation.
+constexpr Value VALUE_TB                 = VALUE_MATE_IN_MAX_PLY - 1;
+constexpr Value VALUE_TB_WIN_IN_MAX_PLY  = VALUE_TB - MAX_PLY;
 constexpr Value VALUE_TB_LOSS_IN_MAX_PLY = -VALUE_TB_WIN_IN_MAX_PLY;
 
 constexpr Value mate_in(int ply)  { return VALUE_MATE - ply; }
