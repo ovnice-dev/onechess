@@ -37,6 +37,11 @@ constexpr int SCALE = 400;   // conversion sortie -> centipions
 
 constexpr int BASE_INPUTS = 768;
 
+// Paires de pions (PP_3Wide de Stockfish 19) : 96 identifiants de pion, paires
+// non ordonnees. Annoncees par le bit PAIRS_FLAG du champ activation.
+constexpr int           PAIR_INPUTS = 96 * 95 / 2;
+constexpr std::uint32_t PAIRS_FLAG  = 256;
+
 constexpr std::uint32_t MAGIC  = 0x334E4E4F;  // "ONN3" : sans champ activation
 constexpr std::uint32_t MAGIC4 = 0x344E4E4F;  // "ONN4" : avec champ activation
 

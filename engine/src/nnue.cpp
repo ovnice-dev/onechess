@@ -38,6 +38,11 @@ struct Network {
     std::int8_t*  featureWeights8 = nullptr;  // copie int8 (mode ONE_FT_INT8)
     std::int16_t  featureBias[HIDDEN_SIZE] = {};
 
+    // Paires de pions (PP_3Wide de Stockfish 19) : [PAIR_INPUTS][HIDDEN_SIZE],
+    // toujours en int16. Absentes (nullptr) pour un reseau sans paires.
+    bool          pairs       = false;
+    std::int16_t* pairWeights = nullptr;
+
     // [outBuckets][2 * HIDDEN_SIZE], sur le tas pour rester aligne
     std::int16_t* outputWeights = nullptr;
     std::int32_t  outputBias[MAX_OUT_BUCKETS] = {};
@@ -45,6 +50,7 @@ struct Network {
     ~Network() {
         aligned_large_pages_free(featureWeights);
         aligned_large_pages_free(featureWeights8);
+        aligned_large_pages_free(pairWeights);
         aligned_large_pages_free(outputWeights);
     }
 };
@@ -186,6 +192,67 @@ inline const FtW* weights_of(int featureIdx) {
 #endif
 }
 
+// --------------------------------------------------------- paires de pions
+//
+// Toute paire de pions, de n'importe quelles couleurs, sur la meme colonne ou
+// sur deux colonnes voisines (rangees 2 a 7). Identifiant d'un pion vu de la
+// perspective p : 48 * (couleur != p) + case relative - 8. La paire {a, b} a
+// pour indice hi * (hi - 1) / 2 + lo. Meme formule que tools/train.py.
+Bitboard PairBand[SQUARE_NB];
+
+void init_pair_band() {
+    for (int s = 0; s < SQUARE_NB; ++s)
+    {
+        const int f = s & 7;
+        Bitboard  b = 0;
+        for (int t = 8; t < 56; ++t)
+            if (t != s && std::abs((t & 7) - f) <= 1)
+                b |= Bitboard(1) << t;
+        PairBand[s] = b;
+    }
+}
+
+inline int pawn_id(Color p, Color c, Square s) {
+    const int rel = (p == WHITE) ? int(s) : int(s) ^ 56;
+    return 48 * (c != p) + rel - 8;
+}
+
+inline int pair_index(Color p, Color ca, Square a, Color cb, Square b) {
+    const int ia = pawn_id(p, ca, a), ib = pawn_id(p, cb, b);
+    const int hi = std::max(ia, ib), lo = std::min(ia, ib);
+    return hi * (hi - 1) / 2 + lo;
+}
+
+inline const std::int16_t* pair_weights(int idx) {
+    return Net->pairWeights + std::size_t(idx) * HIDDEN_SIZE;
+}
+
+// Paires qui contiennent au moins un pion de « changed », parmi les pions
+// pw/pb : chaque paire n'est comptee qu'une fois.
+int collect_pairs(Color p, Bitboard changedW, Bitboard changedB, Bitboard pw, Bitboard pb,
+                  int* out) {
+    int            n         = 0;
+    const Bitboard changed   = changedW | changedB;
+    const Bitboard unchanged = (pw | pb) & ~changed;
+    for (Bitboard u = changed; u;)
+    {
+        const Square   a    = pop_lsb(u);
+        const Color    ca   = (pb & a) ? BLACK : WHITE;
+        const Bitboard mask = PairBand[a] & (unchanged | u);
+        for (Bitboard q = pw & mask; q;)
+            out[n++] = pair_index(p, ca, a, WHITE, pop_lsb(q));
+        for (Bitboard q = pb & mask; q;)
+            out[n++] = pair_index(p, ca, a, BLACK, pop_lsb(q));
+    }
+    return n;
+}
+
+// Pions des deux camps avant et apres le coup d'un noeud de la chaine.
+struct PawnSets {
+    Bitboard before[COLOR_NB];
+    Bitboard after[COLOR_NB];
+};
+
 // Le coup change-t-il le bucket ou le miroir de la perspective p ? Si oui,
 // toutes ses caracteristiques changent et un delta ne suffit plus.
 bool requires_refresh(const DirtyPiece& dp, Color p) {
@@ -216,7 +283,7 @@ bool requires_refresh(const DirtyPiece& dp, Color p) {
 // identique au bit pres -- l'arithmetique int16 modulo 2^16 est associative --
 // ce que verifient l'assertion de evaluate() en compilation de debogage et le
 // nombre de noeuds a profondeur fixe.
-void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack) {
+void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const PawnSets* ps) {
     PROF_SCOPE(NNUE_APPLY);
 #ifdef OLD_APPLY
     // Version d'avant le 11-09, gardee pour la mesure a froid (JOURNAL, etape
@@ -235,6 +302,7 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack) {
         if ((p == WHITE && !doWhite) || (p == BLACK && !doBlack))
             continue;
 
+        (void) ps;
         const PerspInfo pi = persp_info(p, si->kingSq[p]);
         std::int16_t*   a  = dst.v[p];
 
@@ -265,6 +333,19 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack) {
         const FtW*          adds[3];
         int                 ns = 0, na = 0;
 
+        // Paires de pions retirees et ajoutees par ce coup
+        int pSub[96], pAdd[96], nps = 0, npa = 0;
+        if (Net->pairs && ps
+            && (ps->before[WHITE] != ps->after[WHITE] || ps->before[BLACK] != ps->after[BLACK]))
+        {
+            npa = collect_pairs(p, ps->after[WHITE] & ~ps->before[WHITE],
+                                ps->after[BLACK] & ~ps->before[BLACK], ps->after[WHITE],
+                                ps->after[BLACK], pAdd);
+            nps = collect_pairs(p, ps->before[WHITE] & ~ps->after[WHITE],
+                                ps->before[BLACK] & ~ps->after[BLACK], ps->before[WHITE],
+                                ps->before[BLACK], pSub);
+        }
+
         for (int i = 0; i < dp.count; ++i)
         {
             if (dp.from[i] != SQ_NONE)
@@ -284,6 +365,12 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack) {
                 v = _mm256_sub_epi16(v, FT_LOAD(subs[k] + j));
             for (int k = 0; k < na; ++k)
                 v = _mm256_add_epi16(v, FT_LOAD(adds[k] + j));
+            for (int k = 0; k < nps; ++k)
+                v = _mm256_sub_epi16(v, _mm256_load_si256(
+                                          reinterpret_cast<const __m256i*>(pair_weights(pSub[k]) + j)));
+            for (int k = 0; k < npa; ++k)
+                v = _mm256_add_epi16(v, _mm256_load_si256(
+                                          reinterpret_cast<const __m256i*>(pair_weights(pAdd[k]) + j)));
             _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
         }
 #else
@@ -294,6 +381,10 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack) {
                 v -= subs[k][j];
             for (int k = 0; k < na; ++k)
                 v += adds[k][j];
+            for (int k = 0; k < nps; ++k)
+                v -= pair_weights(pSub[k])[j];
+            for (int k = 0; k < npa; ++k)
+                v += pair_weights(pAdd[k])[j];
             d[j] = std::int16_t(v);
         }
 #endif
@@ -320,6 +411,7 @@ std::string info() {
     std::ostringstream ss;
     ss << "NNUE " << Net->nBuckets << "x768x" << Net->hidden << "x2->"
        << Net->outBuckets << (Net->mirror ? " miroir" : "") << (Net->material ? " experts-materiel" : "")
+       << (Net->pairs ? " paires-de-pions" : "")
        << (Net->activation == ACT_SCRELU ? " screlu" : " crelu") << "  " << NetPath;
     return ss.str();
 }
@@ -376,6 +468,10 @@ bool load(const std::string& path) {
     if (magic == MAGIC4)
         f.read(reinterpret_cast<char*>(&activation), 4);
 
+    // Bit 8 du champ activation : le reseau a des entrees paires de pions
+    const bool pairs = activation & PAIRS_FLAG;
+    activation &= ~PAIRS_FLAG;
+
     if (!f || (activation != ACT_CRELU && activation != ACT_SCRELU))
         return false;
 
@@ -386,6 +482,7 @@ bool load(const std::string& path) {
     net->mirror     = mirror == 1;
     net->outBuckets = int(outBuckets);
     net->activation = activation;
+    net->pairs      = pairs;
 
     f.read(reinterpret_cast<char*>(net->layout), 64);
 
@@ -428,6 +525,20 @@ bool load(const std::string& path) {
     }
 #endif
     f.read(reinterpret_cast<char*>(net->featureBias), sizeof(net->featureBias));
+    if (pairs)
+    {
+        const std::size_t pBytes = std::size_t(PAIR_INPUTS) * HIDDEN_SIZE * sizeof(std::int16_t);
+        net->pairWeights = static_cast<std::int16_t*>(aligned_large_pages_alloc(pBytes));
+        if (!net->pairWeights)
+        {
+            delete net;
+            return false;
+        }
+        f.read(reinterpret_cast<char*>(net->pairWeights), std::streamsize(pBytes));
+        static bool bandReady = false;
+        if (!bandReady)
+            init_pair_band(), bandReady = true;
+    }
     f.read(reinterpret_cast<char*>(net->outputWeights), std::streamsize(oBytes));
     f.read(reinterpret_cast<char*>(net->outputBias),
            std::streamsize(net->outBuckets * sizeof(std::int32_t)));
@@ -461,6 +572,16 @@ void refresh_side(Accumulator& acc, const Position& pos, Color p) {
     {
         const Square s = pop_lsb(b);
         add_feature(acc.v[p], weights_of(feature_index(p, pos.piece_on(s), s, pi)));
+    }
+
+    if (Net->pairs)
+    {
+        const Bitboard pw = pos.pieces(WHITE, PAWN), pb = pos.pieces(BLACK, PAWN);
+        int            idx[160];
+        const int      n = collect_pairs(p, pw, pb, pw, pb, idx);
+        for (int k = 0; k < n; ++k)
+            for (int j = 0; j < HIDDEN_SIZE; ++j)
+                acc.v[p][j] = std::int16_t(acc.v[p][j] + pair_weights(idx[k])[j]);
     }
 }
 
@@ -555,9 +676,35 @@ Value evaluate(const Position& pos) {
                 refreshSide[WHITE] = refreshSide[BLACK] = true;
         }
 
+        // Pions de chaque noeud de la chaine, retrouves en defaisant les coups
+        // depuis la position courante (les paires ne dependent que d'eux).
+        PawnSets ps[8];
+        if (haveAncestor && Net->pairs)
+        {
+            Bitboard cur[COLOR_NB] = {pos.pieces(WHITE, PAWN), pos.pieces(BLACK, PAWN)};
+            for (int i = 0; i < n; ++i)
+            {
+                ps[i].after[WHITE] = cur[WHITE];
+                ps[i].after[BLACK] = cur[BLACK];
+                const DirtyPiece& dp = chain[i]->dirtyPiece;
+                for (int k = 0; k < dp.count; ++k)
+                    if (type_of(dp.piece[k]) == PAWN)
+                    {
+                        const Color c = color_of(dp.piece[k]);
+                        if (dp.to[k] != SQ_NONE)
+                            cur[c] &= ~(Bitboard(1) << dp.to[k]);
+                        if (dp.from[k] != SQ_NONE)
+                            cur[c] |= Bitboard(1) << dp.from[k];
+                    }
+                ps[i].before[WHITE] = cur[WHITE];
+                ps[i].before[BLACK] = cur[BLACK];
+            }
+        }
+
         if (haveAncestor)
             for (int i = n - 1; i >= 0; --i)
-                apply(pos, chain[i], !refreshSide[WHITE], !refreshSide[BLACK]);
+                apply(pos, chain[i], !refreshSide[WHITE], !refreshSide[BLACK],
+                      Net->pairs ? &ps[i] : nullptr);
 
         for (Color c : {WHITE, BLACK})
             if (refreshSide[c])

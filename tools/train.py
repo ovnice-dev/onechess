@@ -38,6 +38,13 @@ from features import (BUCKET_LAYOUTS, bucket_count, compact_layout,   # noqa: E4
                       output_bucket)
 
 BASE_INPUTS = 768
+# Paires de pions (PP_3Wide de Stockfish 19) : toute paire de pions, de
+# n'importe quelles couleurs, sur la meme colonne ou deux colonnes voisines.
+# 96 identifiants de pion (couleur relative x 48 cases des rangees 2 a 7),
+# paires non ordonnees : 96 * 95 / 2 entrees.
+PAIR_INPUTS = 96 * 95 // 2
+MAX_PAIRS   = 64      # borne pour le calcul du pire accumulateur
+PAIRS_FLAG  = 256     # bit du champ « activation » de l'en-tete .nnue
 MAX_PIECES  = 32
 QA, QB      = 255, 64
 SCALE       = 400
@@ -271,13 +278,49 @@ class FeatureMap:
                 torch.where(valid, base, pad_v))
 
 
+def pair_indices(codes, sqs, persp):
+    """Paires de pions vues d'une perspective. codes/sqs : (B, 32) int64.
+
+    Rend (B, K) : les indices des paires presentes, completes par PAIR_INPUTS
+    (ligne nulle). K est le plus grand nombre de paires du lot : on ne
+    rassemble que ce qui existe.
+    """
+    pawn   = (codes < 12) & (codes % 6 == 0)
+    colour = torch.div(codes, 6, rounding_mode="floor")
+    rel    = sqs ^ (56 * persp)
+    # int32 : les tenseurs (B, 32, 32) restent quatre fois plus petits
+    pid    = (48 * (colour != persp).long() + (rel - 8).clamp(0, 47)).to(torch.int32)
+    fil    = (rel & 7).to(torch.int32)
+
+    a_ok = pawn.unsqueeze(2) & pawn.unsqueeze(1)
+    tri  = torch.triu(torch.ones(codes.shape[1], codes.shape[1], dtype=torch.bool,
+                                 device=codes.device), diagonal=1)
+    near = (fil.unsqueeze(2) - fil.unsqueeze(1)).abs() <= 1
+    ok   = a_ok & near & tri
+
+    hi  = torch.maximum(pid.unsqueeze(2), pid.unsqueeze(1))
+    lo  = torch.minimum(pid.unsqueeze(2), pid.unsqueeze(1))
+    idx = torch.where(ok, hi * (hi - 1) // 2 + lo, PAIR_INPUTS).flatten(1)
+
+    k = int(ok.flatten(1).sum(dim=1).max().item()) if idx.numel() else 0
+    idx, _ = torch.sort(idx, dim=1)
+    return idx[:, :max(k, 1)].long()
+
+
 # --------------------------------------------------------------------------
 
 class Perspective(nn.Module):
     def __init__(self, n_inputs, hidden, out_buckets=1, factorizer=False,
-                 activation="crelu"):
+                 activation="crelu", pairs=False):
         super().__init__()
         self.hidden      = hidden
+        self.pairs       = pairs
+        if pairs:
+            self.pp = nn.EmbeddingBag(PAIR_INPUTS + 1, hidden, mode="sum",
+                                      padding_idx=PAIR_INPUTS)
+            nn.init.normal_(self.pp.weight, std=0.005)
+            with torch.no_grad():
+                self.pp.weight[PAIR_INPUTS].zero_()
         self.pad         = n_inputs
         self.out_buckets = out_buckets
         self.activation  = activation
@@ -312,6 +355,9 @@ class Perspective(nn.Module):
         if self.factorizer:
             aw = aw + self.ft_v(idx_w[1])
             ab = ab + self.ft_v(idx_b[1])
+        if self.pairs:
+            aw = aw + self.pp(idx_w[2])
+            ab = ab + self.pp(idx_b[2])
 
         s = stm.unsqueeze(1).float()          # 0 = blancs au trait
         us   = aw * (1 - s) + ab * s
@@ -334,6 +380,9 @@ class Perspective(nn.Module):
             if self.factorizer:
                 self.ft_v.weight.clamp_(-1.98, 1.98)
                 self.ft_v.weight[BASE_INPUTS].zero_()
+            if self.pairs:
+                self.pp.weight.clamp_(-1.98, 1.98)
+                self.pp.weight[PAIR_INPUTS].zero_()
 
 
 def export(model, fmap, path, hidden):
@@ -346,6 +395,7 @@ def export(model, fmap, path, hidden):
             fw = (fw.reshape(fmap.nbuckets, BASE_INPUTS, -1)
                   + shared[None, :, :]).reshape(fmap.n_inputs, -1)
         fb = model.ft_bias.cpu().numpy()
+        pw = model.pp.weight[:PAIR_INPUTS].cpu().numpy() if model.pairs else None
         ow = model.out.weight.cpu().numpy()          # (outBuckets, 2*hidden)
         ob = model.out.bias.cpu().numpy()            # (outBuckets,)
 
@@ -355,7 +405,10 @@ def export(model, fmap, path, hidden):
     ob_q = np.round(ob * QA * QB).astype(np.int32)
 
     # Pire accumulateur possible : biais + les 32 plus gros poids d'une colonne
+    pw_q  = np.round(pw * QA).astype(np.int32) if pw is not None else None
     worst = np.abs(fb_q).max() + np.sort(np.abs(fw_q), axis=0)[-MAX_PIECES:].sum(axis=0).max()
+    if pw_q is not None:
+        worst += np.sort(np.abs(pw_q), axis=0)[-MAX_PAIRS:].sum(axis=0).max()
     if worst >= 32767:
         raise SystemExit(f"debordement de l'accumulateur : {worst} >= 32767")
     for nom, arr in (("entree", fw_q), ("biais", fb_q), ("sortie", ow_q)):
@@ -368,10 +421,12 @@ def export(model, fmap, path, hidden):
     with open(path, "wb") as f:
         f.write(struct.pack("<IIIIII", MAGIC, hidden, fmap.nbuckets,
                             2 if fmap.material else int(fmap.mirror), model.out_buckets,
-                            ACTIVATIONS[model.activation]))
+                            ACTIVATIONS[model.activation] | (PAIRS_FLAG if model.pairs else 0)))
         f.write(bytes(layout))
         f.write(fw_q.astype("<i2").tobytes())
         f.write(fb_q.astype("<i2").tobytes())
+        if pw_q is not None:
+            f.write(pw_q.astype("<i2").tobytes())   # PAIR_INPUTS x hidden, apres le biais
         f.write(ow_q.astype("<i2").tobytes())       # rangee-majeur par bucket
         f.write(ob_q.astype("<i4").tobytes())
 
@@ -413,6 +468,8 @@ def main():
                     help="poids flottants (.pt) a reprendre : affinage d'un reseau deja entraine")
     ap.add_argument("--save-pt", default="",
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
+    ap.add_argument("--pairs", type=int, default=0,
+                    help="1 : entrees paires de pions (PP_3Wide de Stockfish 19)")
     ap.add_argument("--checkpoint", default="",
                     help="point de reprise ecrit a chaque epoque ; s'il existe au "
                          "lancement, l'entrainement reprend a l'epoque suivante")
@@ -468,7 +525,7 @@ def main():
 
     fmap  = FeatureMap(args.buckets, bool(args.mirror), dev)
     model = Perspective(fmap.n_inputs, args.hidden, args.out_buckets,
-                        bool(args.factorizer), args.activation).to(dev)
+                        bool(args.factorizer), args.activation, bool(args.pairs)).to(dev)
     if args.init:
         model.load_state_dict(torch.load(args.init, map_location=dev))
         print(f"reprise des poids de {args.init}")
@@ -480,7 +537,8 @@ def main():
     print(f"{dev} | {split:,} entrainement / {n_val:,} validation | HL={args.hidden} "
           f"| roi={args.buckets}({fmap.nbuckets}) miroir={args.mirror} "
           f"sortie={args.out_buckets} tronc={int(model.factorizer)} "
-          f"| {fmap.n_inputs:,} entrees, {fmap.n_inputs*args.hidden/1e6:.1f} M poids")
+          f"| {fmap.n_inputs:,} entrees{' + paires de pions' if args.pairs else ''}, "
+          f"{(fmap.n_inputs + PAIR_INPUTS * args.pairs)*args.hidden/1e6:.1f} M poids")
 
     steps = (split + args.batch - 1) // args.batch
     best       = (1e9, 1e9, 0)
@@ -489,6 +547,9 @@ def main():
 
     def feats(c, s):
         c, s = c.long(), s.long()
+        if args.pairs:
+            return (fmap.indices(c, s, 0) + (pair_indices(c, s, 0),),
+                    fmap.indices(c, s, 1) + (pair_indices(c, s, 1),))
         return fmap.indices(c, s, 0), fmap.indices(c, s, 1)
 
     def eval_set(sel, chunk=args.val_chunk):

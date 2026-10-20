@@ -19,6 +19,8 @@ import chess
 import numpy as np
 
 BASE_INPUTS = 768
+PAIR_INPUTS = 96 * 95 // 2   # paires de pions (PP_3Wide)
+PAIRS_FLAG  = 256
 QA, QB, SCALE = 255, 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
 MAGIC4 = 0x344E4E4F     # avec champ activation
@@ -62,6 +64,8 @@ class Net:
             if magic not in (MAGIC3, MAGIC4):
                 raise SystemExit("fichier reseau invalide (magic)")
             self.act = struct.unpack("<I", f.read(4))[0] if magic == MAGIC4 else 0
+            self.pairs = bool(self.act & PAIRS_FLAG)
+            self.act &= ~PAIRS_FLAG
             self.hl, self.nb, self.mirror, self.ob_n = hl, nb, mirror == 1, ob_n
             self.material = mirror == 2   # experts choisis par le materiel
             self.layout = np.frombuffer(f.read(64), dtype=np.uint8).astype(int)
@@ -69,6 +73,8 @@ class Net:
             self.fw = np.frombuffer(f.read(nfeat * hl * 2),
                                     dtype="<i2").reshape(nfeat, hl).astype(np.int32)
             self.fb = np.frombuffer(f.read(hl * 2), dtype="<i2").astype(np.int32)
+            self.pw = (np.frombuffer(f.read(PAIR_INPUTS * hl * 2), dtype="<i2")
+                       .reshape(PAIR_INPUTS, hl).astype(np.int32) if self.pairs else None)
             self.ow = np.frombuffer(f.read(ob_n * 2 * hl * 2),
                                     dtype="<i2").reshape(ob_n, 2 * hl).astype(np.int32)
             self.ob = np.frombuffer(f.read(ob_n * 4), dtype="<i4").astype(np.int64)
@@ -93,6 +99,24 @@ class Net:
             out.append(bucket * BASE_INPUTS + pidx * 64 + rel)
         return out
 
+    def pair_features(self, board, persp):
+        """Paires de pions (meme colonne ou colonnes voisines), cote Python."""
+        pawns = [(sq, pc.color) for sq, pc in board.piece_map().items()
+                 if pc.piece_type == chess.PAWN]
+        out = []
+        for i in range(len(pawns)):
+            for j in range(i + 1, len(pawns)):
+                (a, ca), (b, cb) = pawns[i], pawns[j]
+                if abs((a & 7) - (b & 7)) > 1:
+                    continue
+                ids = []
+                for sq, c in ((a, ca), (b, cb)):
+                    rel = sq if persp == chess.WHITE else sq ^ 56
+                    ids.append(48 * (c != persp) + rel - 8)
+                hi, lo = max(ids), min(ids)
+                out.append(hi * (hi - 1) // 2 + lo)
+        return out
+
     def evaluate(self, fen):
         board = chess.Board(fen)
         acc = {}
@@ -100,6 +124,9 @@ class Net:
             a = self.fb.copy()
             for f in self.features(board, persp):
                 a = a + self.fw[f]
+            if self.pairs:
+                for f in self.pair_features(board, persp):
+                    a = a + self.pw[f]
             # Le moteur garde l'accumulateur en int16 : on reproduit la troncature
             acc[persp] = a.astype(np.int16).astype(np.int32)
 
