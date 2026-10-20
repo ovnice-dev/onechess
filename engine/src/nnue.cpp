@@ -43,6 +43,12 @@ struct Network {
     bool          pairs       = false;
     std::int16_t* pairWeights = nullptr;
 
+    // Menaces : une ligne par (piece relative, case relative) d'une piece
+    // attaquee par le camp adverse. Peu actives a la fois : on les ajoute a
+    // chaque evaluation, sans mise a jour incrementale.
+    bool          threats       = false;
+    std::int16_t* threatWeights = nullptr;
+
     // [outBuckets][2 * HIDDEN_SIZE], sur le tas pour rester aligne
     std::int16_t* outputWeights = nullptr;
     std::int32_t  outputBias[MAX_OUT_BUCKETS] = {};
@@ -51,6 +57,7 @@ struct Network {
         aligned_large_pages_free(featureWeights);
         aligned_large_pages_free(featureWeights8);
         aligned_large_pages_free(pairWeights);
+        aligned_large_pages_free(threatWeights);
         aligned_large_pages_free(outputWeights);
     }
 };
@@ -146,6 +153,39 @@ inline std::int32_t forward_half(const std::int16_t* acc, const std::int16_t* w)
     for (int i = 0; i < HIDDEN_SIZE; ++i)
     {
         int a = acc[i] < 0 ? 0 : (acc[i] > QA ? QA : acc[i]);
+        sum += a * w[i];
+    }
+    return sum;
+#endif
+}
+
+// Meme produit, l'accumulateur recevant d'abord n lignes de menaces.
+inline std::int32_t forward_half_t(const std::int16_t* acc, const std::int16_t* const* rows, int n,
+                                   const std::int16_t* w) {
+#if defined(__AVX2__)
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i qa   = _mm256_set1_epi16(QA);
+    __m256i       sum  = _mm256_setzero_si256();
+
+    for (int i = 0; i < HIDDEN_SIZE; i += 16)
+    {
+        __m256i a = _mm256_load_si256(reinterpret_cast<const __m256i*>(acc + i));
+        for (int k = 0; k < n; ++k)
+            a = _mm256_add_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(rows[k] + i)));
+        a         = _mm256_min_epi16(_mm256_max_epi16(a, zero), qa);
+        __m256i b = _mm256_load_si256(reinterpret_cast<const __m256i*>(w + i));
+        sum       = _mm256_add_epi32(sum, _mm256_madd_epi16(a, b));
+    }
+    return hsum(sum);
+#else
+    std::int32_t sum = 0;
+    for (int i = 0; i < HIDDEN_SIZE; ++i)
+    {
+        int v = acc[i];
+        for (int k = 0; k < n; ++k)
+            v += rows[k][i];
+        v      = std::int16_t(v);
+        int a  = v < 0 ? 0 : (v > QA ? QA : v);
         sum += a * w[i];
     }
     return sum;
@@ -411,7 +451,7 @@ std::string info() {
     std::ostringstream ss;
     ss << "NNUE " << Net->nBuckets << "x768x" << Net->hidden << "x2->"
        << Net->outBuckets << (Net->mirror ? " miroir" : "") << (Net->material ? " experts-materiel" : "")
-       << (Net->pairs ? " paires-de-pions" : "")
+       << (Net->pairs ? " paires-de-pions" : "") << (Net->threats ? " menaces" : "")
        << (Net->activation == ACT_SCRELU ? " screlu" : " crelu") << "  " << NetPath;
     return ss.str();
 }
@@ -468,12 +508,16 @@ bool load(const std::string& path) {
     if (magic == MAGIC4)
         f.read(reinterpret_cast<char*>(&activation), 4);
 
-    // Bit 8 du champ activation : le reseau a des entrees paires de pions
-    const bool pairs = activation & PAIRS_FLAG;
-    activation &= ~PAIRS_FLAG;
+    // Bit 8 du champ activation : le reseau a des entrees paires de pions ;
+    // bit 9 : des entrees menaces.
+    const bool pairs   = activation & PAIRS_FLAG;
+    const bool threats = activation & THREAT_FLAG;
+    activation &= ~(PAIRS_FLAG | THREAT_FLAG);
 
     if (!f || (activation != ACT_CRELU && activation != ACT_SCRELU))
         return false;
+    if (threats && activation != ACT_CRELU)
+        return false;   // menaces : seule la sortie CReLU est ecrite
 
     auto* net       = new Network();
     net->hidden     = int(hidden);
@@ -483,6 +527,7 @@ bool load(const std::string& path) {
     net->outBuckets = int(outBuckets);
     net->activation = activation;
     net->pairs      = pairs;
+    net->threats    = threats;
 
     f.read(reinterpret_cast<char*>(net->layout), 64);
 
@@ -538,6 +583,17 @@ bool load(const std::string& path) {
         static bool bandReady = false;
         if (!bandReady)
             init_pair_band(), bandReady = true;
+    }
+    if (threats)
+    {
+        const std::size_t tBytes = std::size_t(THREAT_INPUTS) * HIDDEN_SIZE * sizeof(std::int16_t);
+        net->threatWeights = static_cast<std::int16_t*>(aligned_large_pages_alloc(tBytes));
+        if (!net->threatWeights)
+        {
+            delete net;
+            return false;
+        }
+        f.read(reinterpret_cast<char*>(net->threatWeights), std::streamsize(tBytes));
     }
     f.read(reinterpret_cast<char*>(net->outputWeights), std::streamsize(oBytes));
     f.read(reinterpret_cast<char*>(net->outputBias),
@@ -595,6 +651,41 @@ int current_bucket(const Position& pos) {
     return output_bucket(popcount(pos.pieces()), Net->outBuckets);
 }
 
+// Lignes de menaces vues de la perspective p : chaque piece (hors rois)
+// attaquee par le camp adverse.
+int threat_rows(const Position& pos, Color p, const Bitboard att[COLOR_NB], const std::int16_t** rows) {
+    int n = 0;
+    for (Color c : {WHITE, BLACK})
+        for (Bitboard b = pos.pieces(c) & ~pos.pieces(KING) & att[~c]; b;)
+        {
+            const Square s   = pop_lsb(b);
+            const int    idx = ((c != p) * 6 + (type_of(pos.piece_on(s)) - 1)) * 64
+                          + ((p == WHITE) ? int(s) : int(s) ^ 56);
+            rows[n++] = Net->threatWeights + std::size_t(idx) * HIDDEN_SIZE;
+        }
+    return n;
+}
+
+inline Bitboard attacks_of(const Position& pos, Color c) {
+    return pos.attacks_by<PAWN>(c) | pos.attacks_by<KNIGHT>(c) | pos.attacks_by<BISHOP>(c)
+         | pos.attacks_by<ROOK>(c) | pos.attacks_by<QUEEN>(c) | pos.attacks_by<KING>(c);
+}
+
+Value output_threats(const Accumulator& acc, const Position& pos, int bucket) {
+    const Color         stm = pos.side_to_move();
+    const std::int16_t* w   = Net->outputWeights + std::size_t(bucket) * 2 * HIDDEN_SIZE;
+    const Bitboard      att[COLOR_NB] = {attacks_of(pos, WHITE), attacks_of(pos, BLACK)};
+    const std::int16_t* rUs[32];
+    const std::int16_t* rThem[32];
+    const int           nUs   = threat_rows(pos, stm, att, rUs);
+    const int           nThem = threat_rows(pos, ~stm, att, rThem);
+
+    const std::int64_t sum = std::int64_t(forward_half_t(acc.v[stm], rUs, nUs, w))
+                           + forward_half_t(acc.v[~stm], rThem, nThem, w + HIDDEN_SIZE);
+    const int cp = int((sum + Net->outputBias[bucket]) * SCALE / (QA * QB));
+    return Value(std::clamp(cp, -12000, 12000));
+}
+
 Value output(const Accumulator& acc, Color stm, int bucket) {
     PROF_SCOPE(NNUE_OUT);
     const std::int16_t* w = Net->outputWeights + std::size_t(bucket) * 2 * HIDDEN_SIZE;
@@ -627,7 +718,8 @@ Value evaluate(const Position& pos) {
     {
         thread_local Accumulator scratch;
         refresh(scratch, pos);
-        return output(scratch, pos.side_to_move(), current_bucket(pos));
+        return Net->threats ? output_threats(scratch, pos, current_bucket(pos))
+                            : output(scratch, pos.side_to_move(), current_bucket(pos));
     }
 
     if (st->accGen != NetGen)
@@ -730,7 +822,8 @@ Value evaluate(const Position& pos) {
 #endif
     }
 
-    return output(pos.accumulator(st->accIndex), pos.side_to_move(), current_bucket(pos));
+    return Net->threats ? output_threats(pos.accumulator(st->accIndex), pos, current_bucket(pos))
+                        : output(pos.accumulator(st->accIndex), pos.side_to_move(), current_bucket(pos));
 }
 
 }  // namespace NNUE

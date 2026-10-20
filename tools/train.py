@@ -34,6 +34,7 @@ import torch
 import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from menaces import THREAT_INPUTS, THREAT_FLAG, MAX_THREATS, threat_indices  # noqa: E402
 from features import (BUCKET_LAYOUTS, bucket_count, compact_layout,   # noqa: E402
                       output_bucket)
 
@@ -336,10 +337,17 @@ def pair_indices(codes, sqs, persp):
 
 class Perspective(nn.Module):
     def __init__(self, n_inputs, hidden, out_buckets=1, factorizer=False,
-                 activation="crelu", pairs=False):
+                 activation="crelu", pairs=False, threats=False):
         super().__init__()
         self.hidden      = hidden
         self.pairs       = pairs
+        self.threats     = threats
+        if threats:
+            self.th = nn.EmbeddingBag(THREAT_INPUTS + 1, hidden, mode="sum",
+                                      padding_idx=THREAT_INPUTS)
+            nn.init.normal_(self.th.weight, std=0.005)
+            with torch.no_grad():
+                self.th.weight[THREAT_INPUTS].zero_()
         if pairs:
             self.pp = nn.EmbeddingBag(PAIR_INPUTS + 1, hidden, mode="sum",
                                       padding_idx=PAIR_INPUTS)
@@ -383,6 +391,9 @@ class Perspective(nn.Module):
         if self.pairs:
             aw = aw + self.pp(idx_w[2])
             ab = ab + self.pp(idx_b[2])
+        if self.threats:
+            aw = aw + self.th(idx_w[3])
+            ab = ab + self.th(idx_b[3])
 
         s = stm.unsqueeze(1).float()          # 0 = blancs au trait
         us   = aw * (1 - s) + ab * s
@@ -408,6 +419,9 @@ class Perspective(nn.Module):
             if self.pairs:
                 self.pp.weight.clamp_(-1.98, 1.98)
                 self.pp.weight[PAIR_INPUTS].zero_()
+            if self.threats:
+                self.th.weight.clamp_(-1.98, 1.98)
+                self.th.weight[THREAT_INPUTS].zero_()
 
 
 def export(model, fmap, path, hidden):
@@ -421,6 +435,7 @@ def export(model, fmap, path, hidden):
                   + shared[None, :, :]).reshape(fmap.n_inputs, -1)
         fb = model.ft_bias.cpu().numpy()
         pw = model.pp.weight[:PAIR_INPUTS].cpu().numpy() if model.pairs else None
+        tw = model.th.weight[:THREAT_INPUTS].cpu().numpy() if model.threats else None
         ow = model.out.weight.cpu().numpy()          # (outBuckets, 2*hidden)
         ob = model.out.bias.cpu().numpy()            # (outBuckets,)
 
@@ -434,6 +449,9 @@ def export(model, fmap, path, hidden):
     worst = np.abs(fb_q).max() + np.sort(np.abs(fw_q), axis=0)[-MAX_PIECES:].sum(axis=0).max()
     if pw_q is not None:
         worst += np.sort(np.abs(pw_q), axis=0)[-MAX_PAIRS:].sum(axis=0).max()
+    tw_q = np.round(tw * QA).astype(np.int32) if tw is not None else None
+    if tw_q is not None:
+        worst += np.sort(np.abs(tw_q), axis=0)[-MAX_THREATS:].sum(axis=0).max()
     if worst >= 32767:
         raise SystemExit(f"debordement de l'accumulateur : {worst} >= 32767")
     for nom, arr in (("entree", fw_q), ("biais", fb_q), ("sortie", ow_q)):
@@ -446,12 +464,15 @@ def export(model, fmap, path, hidden):
     with open(path, "wb") as f:
         f.write(struct.pack("<IIIIII", MAGIC, hidden, fmap.nbuckets,
                             2 if fmap.material else int(fmap.mirror), model.out_buckets,
-                            ACTIVATIONS[model.activation] | (PAIRS_FLAG if model.pairs else 0)))
+                            ACTIVATIONS[model.activation] | (PAIRS_FLAG if model.pairs else 0)
+                            | (THREAT_FLAG if model.threats else 0)))
         f.write(bytes(layout))
         f.write(fw_q.astype("<i2").tobytes())
         f.write(fb_q.astype("<i2").tobytes())
         if pw_q is not None:
             f.write(pw_q.astype("<i2").tobytes())   # PAIR_INPUTS x hidden, apres le biais
+        if tw_q is not None:
+            f.write(tw_q.astype("<i2").tobytes())   # THREAT_INPUTS x hidden, apres les paires
         f.write(ow_q.astype("<i2").tobytes())       # rangee-majeur par bucket
         f.write(ob_q.astype("<i4").tobytes())
 
@@ -495,6 +516,8 @@ def main():
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
     ap.add_argument("--dedup", type=int, default=0,
                     help="garde au plus N exemplaires d'une meme position (0 = tout)")
+    ap.add_argument("--threats", type=int, default=0,
+                    help="1 : entrees menaces (piece attaquee par l'adversaire)")
     ap.add_argument("--pairs", type=int, default=0,
                     help="1 : entrees paires de pions (PP_3Wide de Stockfish 19)")
     ap.add_argument("--checkpoint", default="",
@@ -554,7 +577,8 @@ def main():
 
     fmap  = FeatureMap(args.buckets, bool(args.mirror), dev)
     model = Perspective(fmap.n_inputs, args.hidden, args.out_buckets,
-                        bool(args.factorizer), args.activation, bool(args.pairs)).to(dev)
+                        bool(args.factorizer), args.activation, bool(args.pairs),
+                        bool(args.threats)).to(dev)
     if args.init:
         model.load_state_dict(torch.load(args.init, map_location=dev))
         print(f"reprise des poids de {args.init}")
@@ -566,7 +590,8 @@ def main():
     print(f"{dev} | {split:,} entrainement / {n_val:,} validation | HL={args.hidden} "
           f"| roi={args.buckets}({fmap.nbuckets}) miroir={args.mirror} "
           f"sortie={args.out_buckets} tronc={int(model.factorizer)} "
-          f"| {fmap.n_inputs:,} entrees{' + paires de pions' if args.pairs else ''}, "
+          f"| {fmap.n_inputs:,} entrees{' + paires de pions' if args.pairs else ''}"
+          f"{' + menaces' if args.threats else ''}, "
           f"{(fmap.n_inputs + PAIR_INPUTS * args.pairs)*args.hidden/1e6:.1f} M poids")
 
     steps = (split + args.batch - 1) // args.batch
@@ -576,10 +601,16 @@ def main():
 
     def feats(c, s):
         c, s = c.long(), s.long()
-        if args.pairs:
-            return (fmap.indices(c, s, 0) + (pair_indices(c, s, 0),),
-                    fmap.indices(c, s, 1) + (pair_indices(c, s, 1),))
-        return fmap.indices(c, s, 0), fmap.indices(c, s, 1)
+        fw, fb = fmap.indices(c, s, 0), fmap.indices(c, s, 1)
+        if args.pairs or args.threats:
+            pz = torch.zeros((c.shape[0], 1), dtype=torch.long, device=c.device)
+            fw = fw + (pair_indices(c, s, 0) if args.pairs else pz,)
+            fb = fb + (pair_indices(c, s, 1) if args.pairs else pz,)
+        if args.threats:
+            tw_, cache = threat_indices(c, s, 0)
+            tb_, _     = threat_indices(c, s, 1, cache)
+            fw, fb = fw + (tw_,), fb + (tb_,)
+        return fw, fb
 
     def eval_set(sel, chunk=args.val_chunk):
         """Perte et erreur en centipions sur un ensemble, par morceaux.

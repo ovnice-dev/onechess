@@ -2,7 +2,8 @@
 # File d'attente des SPRT en lot : lance les tests de ci/file_lot.txt les uns
 # apres les autres, MAXP a la fois (chaque test occupe MORCEAUX machines).
 #   bash ci/file_lot.sh [MAXP=3]
-# Une ligne de la file : Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
+# Une ligne de la file : Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference|mode
+# (mode : nodes par defaut, ou tc:10+0.1 pour un test au temps)
 # (lignes vides et commentaires # ignores). Un test dont le journal contient
 # FIN est fini ; relancer la file reprend exactement ou elle en etait (les
 # pilotes reprennent les vagues deja lancees).
@@ -14,13 +15,13 @@ while true; do
   # pilotes termines
   for n in "${!actif[@]}"; do kill -0 "${actif[$n]}" 2>/dev/null || unset "actif[$n]"; done
   reste=0
-  while IFS='|' read -r nom opts bornes m p vmax opt2; do
+  while IFS='|' read -r nom opts bornes m p vmax opt2 mode; do
     [ -z "$nom" ] && continue; case "$nom" in \#*) continue;; esac
     grep -q " FIN " "ci_resultats/lot/$nom.log" 2>/dev/null && continue
     reste=1
     [ -n "${actif[$nom]}" ] && continue
     [ "${#actif[@]}" -ge "$MAXP" ] && continue
-    bash ci/sprt_lot.sh "$nom" "$opts" "${m:-6}" "${p:-1000}" "${bornes:-0 3}" "${vmax:-10}" nodes "$opt2" &
+    bash ci/sprt_lot.sh "$nom" "$opts" "${m:-6}" "${p:-1000}" "${bornes:-0 3}" "${vmax:-10}" "${mode:-nodes}" "$opt2" &
     actif[$nom]=$!
     echo "$(date '+%H:%M') lance $nom"
     sleep 30

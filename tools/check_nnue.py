@@ -21,6 +21,8 @@ import numpy as np
 BASE_INPUTS = 768
 PAIR_INPUTS = 96 * 95 // 2   # paires de pions (PP_3Wide)
 PAIRS_FLAG  = 256
+THREAT_INPUTS = 768          # menaces : piece (hors roi) attaquee par l'adversaire
+THREAT_FLAG   = 512
 QA, QB, SCALE = 255, 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
 MAGIC4 = 0x344E4E4F     # avec champ activation
@@ -65,7 +67,8 @@ class Net:
                 raise SystemExit("fichier reseau invalide (magic)")
             self.act = struct.unpack("<I", f.read(4))[0] if magic == MAGIC4 else 0
             self.pairs = bool(self.act & PAIRS_FLAG)
-            self.act &= ~PAIRS_FLAG
+            self.threats = bool(self.act & THREAT_FLAG)
+            self.act &= ~(PAIRS_FLAG | THREAT_FLAG)
             self.hl, self.nb, self.mirror, self.ob_n = hl, nb, mirror == 1, ob_n
             self.material = mirror == 2   # experts choisis par le materiel
             self.layout = np.frombuffer(f.read(64), dtype=np.uint8).astype(int)
@@ -75,6 +78,8 @@ class Net:
             self.fb = np.frombuffer(f.read(hl * 2), dtype="<i2").astype(np.int32)
             self.pw = (np.frombuffer(f.read(PAIR_INPUTS * hl * 2), dtype="<i2")
                        .reshape(PAIR_INPUTS, hl).astype(np.int32) if self.pairs else None)
+            self.tw = (np.frombuffer(f.read(THREAT_INPUTS * hl * 2), dtype="<i2")
+                       .reshape(THREAT_INPUTS, hl).astype(np.int32) if self.threats else None)
             self.ow = np.frombuffer(f.read(ob_n * 2 * hl * 2),
                                     dtype="<i2").reshape(ob_n, 2 * hl).astype(np.int32)
             self.ob = np.frombuffer(f.read(ob_n * 4), dtype="<i4").astype(np.int64)
@@ -117,6 +122,15 @@ class Net:
                 out.append(hi * (hi - 1) // 2 + lo)
         return out
 
+    def threat_features(self, board, persp):
+        out = []
+        for sq, pc in board.piece_map().items():
+            if pc.piece_type == chess.KING or not board.is_attacked_by(not pc.color, sq):
+                continue
+            pidx = (pc.color != persp) * 6 + pc.piece_type - 1
+            out.append(pidx * 64 + (sq if persp == chess.WHITE else sq ^ 56))
+        return out
+
     def evaluate(self, fen):
         board = chess.Board(fen)
         acc = {}
@@ -127,6 +141,9 @@ class Net:
             if self.pairs:
                 for f in self.pair_features(board, persp):
                     a = a + self.pw[f]
+            if self.threats:
+                for f in self.threat_features(board, persp):
+                    a = a + self.tw[f]
             # Le moteur garde l'accumulateur en int16 : on reproduit la troncature
             acc[persp] = a.astype(np.int16).astype(np.int32)
 

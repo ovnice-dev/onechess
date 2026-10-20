@@ -42,6 +42,11 @@ constexpr int BASE_INPUTS = 768;
 constexpr int           PAIR_INPUTS = 96 * 95 / 2;
 constexpr std::uint32_t PAIRS_FLAG  = 256;
 
+// Menaces : une entree par (piece relative, case relative) d'une piece, hors
+// rois, attaquee par le camp adverse. Bit THREAT_FLAG du champ activation.
+constexpr int           THREAT_INPUTS = 768;
+constexpr std::uint32_t THREAT_FLAG   = 512;
+
 constexpr std::uint32_t MAGIC  = 0x334E4E4F;  // "ONN3" : sans champ activation
 constexpr std::uint32_t MAGIC4 = 0x344E4E4F;  // "ONN4" : avec champ activation
 
