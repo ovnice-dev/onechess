@@ -136,6 +136,31 @@ def decode_shards(pattern, limit=0, cache=None):
     return codes, sqs, score, stm, result
 
 
+def dedup_recs(recs, k):
+    """Garde au plus k exemplaires de chaque position (plateau + trait).
+
+    Le lot Elite contient 11,4 % de doublons, surtout des positions
+    d'ouverture (jusqu'a 7 151 fois la meme) : sans plafond, l'entrainement
+    leur donne un poids demesure. On garde les k premiers exemplaires.
+    """
+    with np.errstate(over="ignore"):
+        q = recs[:, :24].copy().view("<u8")
+        key = q[:, 0] * np.uint64(0x9E3779B97F4A7C15)
+        key ^= (q[:, 1] + np.uint64(0x632BE59BD9B4E019)) * np.uint64(0xC2B2AE3D27D4EB4F)
+        key ^= (q[:, 2] + np.uint64(0x165667B19E3779F9)) * np.uint64(0x94D049BB133111EB)
+        key ^= recs[:, 26].astype(np.uint64) * np.uint64(0xD6E8FEB86659FD93)
+    order = np.argsort(key, kind="stable")
+    ks    = key[order]
+    debut = np.r_[True, ks[1:] != ks[:-1]]
+    grp   = np.cumsum(debut) - 1
+    rang  = np.arange(len(ks)) - np.flatnonzero(debut)[grp]
+    garde = np.zeros(len(recs), dtype=bool)
+    garde[order[rang < k]] = True
+    print(f"doublons : {len(recs) - int(garde.sum()):,} positions retirees "
+          f"(au plus {k} exemplaires par position), {int(garde.sum()):,} gardees")
+    return recs[garde]
+
+
 def read_raw(pattern, limit=0):
     """Rend les enregistrements bruts (n, 32) sans rien decoder."""
     files = sorted(glob.glob(pattern))
@@ -468,6 +493,8 @@ def main():
                     help="poids flottants (.pt) a reprendre : affinage d'un reseau deja entraine")
     ap.add_argument("--save-pt", default="",
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
+    ap.add_argument("--dedup", type=int, default=0,
+                    help="garde au plus N exemplaires d'une meme position (0 = tout)")
     ap.add_argument("--pairs", type=int, default=0,
                     help="1 : entrees paires de pions (PP_3Wide de Stockfish 19)")
     ap.add_argument("--checkpoint", default="",
@@ -481,6 +508,8 @@ def main():
 
     if args.gpu_decode:
         recs = read_raw(args.data, args.limit)
+        if args.dedup:
+            recs = dedup_recs(recs, args.dedup)
         if args.use and args.use < len(recs):
             recs = recs[:args.use]
         n    = len(recs)
