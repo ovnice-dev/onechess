@@ -1,0 +1,64 @@
+name: SPRT
+run-name: ${{ inputs.nom }}
+
+# Lance un SPRT a la demande :
+#   gh workflow run sprt.yml -f nom=Essai -f opt1="ThreatHist=1"
+# Les resultats (journal et etat, reprenable) sont deposes en artefact.
+on:
+  workflow_dispatch:
+    inputs:
+      nom:
+        description: "nom du test"
+        required: true
+      opt1:
+        description: "options UCI du candidat, separees par des espaces"
+        required: false
+        default: ""
+      opt2:
+        description: "options UCI de la reference"
+        required: false
+        default: ""
+      mode:
+        description: "nodes, ou tc:10+0.1"
+        required: false
+        default: "nodes"
+      minutes:
+        description: "duree maximale du match"
+        required: false
+        default: "330"
+      reprise:
+        description: "numero d'un run precedent dont reprendre l'etat (vide = depart a zero)"
+        required: false
+        default: ""
+
+jobs:
+  sprt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install chess
+      - name: etat precedent
+        if: ${{ inputs.reprise != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: sprt-${{ inputs.nom }}
+          run-id: ${{ inputs.reprise }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ci_in
+      - name: SPRT
+        env:
+          NOM: ${{ inputs.nom }}
+          OPT1: ${{ inputs.opt1 }}
+          OPT2: ${{ inputs.opt2 }}
+          MODE: ${{ inputs.mode }}
+          MINUTES: ${{ inputs.minutes }}
+        run: bash ci/sprt_ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sprt-${{ inputs.nom }}
+          path: ci_out/

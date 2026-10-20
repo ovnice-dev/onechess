@@ -1,0 +1,28 @@
+# Depot Onechess : le code et les documents seulement.
+# Tout est ignore par defaut, puis on autorise explicitement ce qui doit y etre.
+# Les donnees (32 Go), les tables de finales et les binaires restent hors du depot.
+/*
+!/.gitignore
+!/.gitattributes
+!/LICENSE
+!/*.md
+!/.github/
+
+!/engine/
+/engine/*
+!/engine/src/
+!/engine/fathom/
+!/engine/build.sh
+
+!/tools/
+/tools/*.avant*
+/tools/__pycache__/
+
+!/ci/
+
+!/data/
+/data/*
+!/data/openings.epd
+!/data/uho_085.epd
+
+!/reseau/
