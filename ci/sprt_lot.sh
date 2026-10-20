@@ -9,8 +9,12 @@ NOM=$1; OPT1=$2; M=${3:-8}; P=${4:-2000}; BORNES=${5:-"0 5"}; VMAX=${6:-8}; MODE
 D=ci_resultats/lot/$NOM; mkdir -p "$D"; J=ci_resultats/lot/$NOM.log
 v=1; while [ -d "$D/v$v" ]; do v=$((v+1)); done      # reprise : vagues deja rapatriees
 echo "$(date '+%d-%m %H:%M') DEBUT $NOM  opt1=[$OPT1] opt2=[$OPT2] $M x $P parties, bornes [$BORNES], mode $MODE" >> "$J"
-trouve() { "$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 40 --json databaseId,displayTitle,conclusion \
-         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | select(.conclusion != \"cancelled\") | .databaseId" | head -1; }
+# Seules comptent les vagues lancees depuis le dernier changement de reference
+# (ci/ref_depuis.txt, date UTC) : une vague du meme nom jouee sur l'ancien
+# reseau ne doit jamais etre reprise.
+DEPUIS=$(cat ci/ref_depuis.txt 2>/dev/null || echo 2000-01-01T00:00:00Z)
+trouve() { "$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 100 --json databaseId,displayTitle,conclusion,createdAt \
+         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | select(.conclusion != \"cancelled\") | select(.createdAt >= \"$DEPUIS\") | .databaseId" | head -1; }
 while [ $v -le "$VMAX" ]; do
   id=$(trouve)     # vague deja lancee par un pilote precedent : on la reprend
   if [ -z "$id" ]; then
@@ -20,8 +24,7 @@ while [ $v -le "$VMAX" ]; do
   fi
   for i in 1 2 3 4 5 6; do
     [ -n "$id" ] && break
-    id=$("$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 20 --json databaseId,displayTitle \
-         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | .databaseId" | head -1)
+    id=$(trouve)
     [ -n "$id" ] && break; sleep 15
   done
   [ -z "$id" ] && { echo "run introuvable" >> "$J"; exit 1; }
