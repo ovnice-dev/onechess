@@ -9,11 +9,17 @@ NOM=$1; OPT1=$2; M=${3:-8}; P=${4:-2000}; BORNES=${5:-"0 5"}; VMAX=${6:-8}; MODE
 D=ci_resultats/lot/$NOM; mkdir -p "$D"; J=ci_resultats/lot/$NOM.log
 v=1; while [ -d "$D/v$v" ]; do v=$((v+1)); done      # reprise : vagues deja rapatriees
 echo "$(date '+%d-%m %H:%M') DEBUT $NOM  opt1=[$OPT1] opt2=[$OPT2] $M x $P parties, bornes [$BORNES], mode $MODE" >> "$J"
+trouve() { "$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 40 --json databaseId,displayTitle,conclusion \
+         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | select(.conclusion != \"cancelled\") | .databaseId" | head -1; }
 while [ $v -le "$VMAX" ]; do
+  id=$(trouve)     # vague deja lancee par un pilote precedent : on la reprend
+  if [ -z "$id" ]; then
   "$G" workflow run sprt_lot.yml -R "$REPO" -f nom="$NOM" -f opt1="$OPT1" -f opt2="$OPT2" -f mode="$MODE" \
        -f morceaux="$M" -f parties="$P" -f vague="$v" -f bornes="$BORNES" || { echo "ECHEC lancement" >> "$J"; exit 1; }
-  sleep 20; id=""
+  sleep 20
+  fi
   for i in 1 2 3 4 5 6; do
+    [ -n "$id" ] && break
     id=$("$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 20 --json databaseId,displayTitle \
          -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | .databaseId" | head -1)
     [ -n "$id" ] && break; sleep 15

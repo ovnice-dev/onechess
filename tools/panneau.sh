@@ -23,9 +23,10 @@ nuage() {   # Kaggle + GitHub -> fichiers du cache
       echo "$ligne"
     done
   } > "$C/kaggle.tmp" 2>/dev/null && mv "$C/kaggle.tmp" "$C/kaggle.txt"
-  "$G" run list --limit 8 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
-     -q '.[] | "\(.databaseId)|\(.displayTitle)|\(.status)|\(.conclusion)|\(.createdAt)|\(.updatedAt)"' \
-     > "$C/gh.tmp" 2>/dev/null && mv "$C/gh.tmp" "$C/gh.txt"
+  { for r in onechess onechess-prive; do
+      "$G" run list -R ovnice-dev/$r --limit 6 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
+         -q '.[] | "\(.createdAt)|\(.databaseId)|\(.displayTitle)|\(.status)|\(.conclusion)|\(.createdAt)|\(.updatedAt)"'
+    done | sort -r | cut -d'|' -f2- | head -8; } > "$C/gh.tmp" 2>/dev/null && mv "$C/gh.tmp" "$C/gh.txt"
   date +%s > "$C/nuage.date"
 }
 
@@ -111,7 +112,13 @@ github() {
       dur=$(( $(date +%s) - deb ))
       printf "  %-12s %-16s ${J}%-9s${Z} %s %d/360 min\n" "$id" "$(echo "$nom" | cut -c1-16)" "$st" "$(barre $((dur/60)) 360 20)" $((dur/60))
     fi
-  done < <(head -6 "$C/gh.txt")
+  done < <(head -8 "$C/gh.txt")
+  # SPRT en lot : bilan cumule de chaque test (ci/sprt_lot.sh)
+  for f in $(ls -t ci_resultats/lot/*.log 2>/dev/null | head -6); do
+    [ $(( $(date +%s) - $(stat -c %Y "$f") )) -gt 86400 ] && continue
+    local e=$(grep -E "Elo|FIN|vague .* lancee" "$f" | tail -1 | sed 's/^ *//' | cut -c1-95)
+    printf "  ${B}lot %-14s${Z} %s\n" "$(basename "$f" .log)" "$e"
+  done
 }
 
 trap 'tput cnorm 2>/dev/null; echo; exit 0' INT TERM
