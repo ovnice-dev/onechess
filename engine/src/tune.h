@@ -90,6 +90,10 @@
     X(LmrAllScale,                    0,     0,     1) \
     X(LmrAlphaEval,                   0,     0,     1) \
     X(LmrCutoffSf,                    0,     0,     1) \
+    X(BadQuiets,                      0,     0, 30000) \
+    X(MultiCutCorr,                   0,     0,     1) \
+    X(TtCutHistSf,                    0,     0,     1) \
+    X(RfpOwn,                         0,     0,     1) \
     X(EvalDiffHist,                   0,     0,     1) \
     X(HistDecay,                      0,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \

@@ -20,6 +20,7 @@ enum Stages {
     QUIET_INIT,
     QUIET,
     BAD_CAPTURE,
+    BAD_QUIET,
 
     // parades d'echec
     EVASION_TT,
@@ -282,12 +283,18 @@ top:
         [[fallthrough]];
 
     case QUIET :
+        // BadQuiets : les tranquilles au score tres bas passent apres les
+        // mauvaises captures (etape « bad quiets » de Stockfish). Inerte a 0.
         if (!skipQuiets
             && select([&]() {
                    return *cur != refutations[0] && *cur != refutations[1]
-                       && *cur != refutations[2];
+                       && *cur != refutations[2]
+                       && (!Tune::BadQuiets || cur->value > -Tune::BadQuiets);
                }))
             return *(cur - 1);
+
+        beginQuiets = endBadCaptures;
+        endQuiets   = endMoves;
 
         // Les mauvaises captures ont ete accumulees en tete du tampon
         cur      = moves;
@@ -297,7 +304,24 @@ top:
         [[fallthrough]];
 
     case BAD_CAPTURE :
-        return select([]() { return true; });
+        if (Move m = select([]() { return true; }); m || !Tune::BadQuiets)
+            return m;
+
+        if (skipQuiets)
+            return Move::none();
+
+        cur      = beginQuiets;
+        endMoves = endQuiets;
+        ++stage;
+        [[fallthrough]];
+
+    case BAD_QUIET :
+        if (skipQuiets)
+            return Move::none();
+        return select([&]() {
+            return cur->value <= -Tune::BadQuiets && *cur != refutations[0]
+                && *cur != refutations[1] && *cur != refutations[2];
+        });
 
     case EVASION_INIT :
         cur      = moves;

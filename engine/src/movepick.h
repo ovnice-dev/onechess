@@ -74,6 +74,7 @@ class MovePicker {
     Move     ttMove;
     Move     refutations[3];  // killer 1, killer 2, counter-move
     ExtMove *cur, *endMoves, *endBadCaptures;
+    ExtMove *beginQuiets = nullptr, *endQuiets = nullptr;  // BadQuiets
     int      refutationIndex = 0;
     int      stage;
     int      threshold = 0;

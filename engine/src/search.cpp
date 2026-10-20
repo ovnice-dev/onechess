@@ -305,6 +305,23 @@ void update_all_stats(const Position& pos,
     }
 }
 
+// Ecart constate entre l'evaluation statique et le score de la recherche :
+// toutes les tables de correction l'apprennent.
+void update_correction_history(const Position& pos, Stack* ss, Thread* th, int bonus) {
+    const Color us = pos.side_to_move();
+    th->correctionHistory[us][correction_index(pos.pawn_key())] << bonus;
+    th->nonPawnCorrection[WHITE][us][correction_index(pos.non_pawn_key(WHITE))] << bonus;
+    th->nonPawnCorrection[BLACK][us][correction_index(pos.non_pawn_key(BLACK))] << bonus;
+    if (CorrMinorWeight)
+        th->minorCorrection[us][correction_index(minor_key(pos))] << bonus;
+    if (CorrMajorWeight)
+        th->majorCorrection[us][correction_index(major_key(pos))] << bonus;
+
+    const Move pm = (ss - 1)->currentMove;
+    if (pm.is_ok())
+        (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(pm.to_sq())][pm.to_sq()] << bonus;
+}
+
 void check_time() {
     if (!Limits.use_time_management() && !Limits.movetime && !Limits.nodes)
         return;
@@ -938,12 +955,14 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         if (ttMove && ttValue >= beta)
         {
             if (!ttCapture)
-                update_quiet_stats(pos, ss, thisThread, ttMove, stat_bonus(depth));
+                update_quiet_stats(pos, ss, thisThread, ttMove,
+                                   TtCutHistSf ? 131 * depth : stat_bonus(depth));
 
-            // Le coup precedent a permis cette coupure : il etait mauvais
-            if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 2 && !priorCapture)
+            // Le coup precedent a permis cette coupure : il etait mauvais.
+            // TtCutHistSf : malus fixe, pour les 4 premiers coups (Stockfish).
+            if (prevSq != SQ_NONE && (ss - 1)->moveCount <= (TtCutHistSf ? 4 : 2) && !priorCapture)
                 update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                              -stat_malus(depth + 1));
+                                              TtCutHistSf ? -2210 : -stat_malus(depth + 1));
         }
 
         // Sous la regle des 50 coups la position n'est plus vraiment la meme
@@ -1077,7 +1096,12 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     // RfpOppW : marge reduite quand l'evaluation adverse s'est degradee au
     // pli precedent (opponentWorsening de Stockfish). Inerte a 0.
     if (!ss->ttPv && depth <= RfpMaxDepth
-        && eval - futility_margin(depth, improving) + RfpOppW * ((ss - 1)->staticEval != VALUE_NONE
+        && eval
+               - (RfpOwn ? Value((std::min(45 + 4 * int(depth), 85) - 20 * !ttHit) * depth
+                                 - 2789 * improving * (std::min(45 + 4 * int(depth), 85) - 20 * !ttHit)
+                                     / 1024)
+                         : futility_margin(depth, improving))
+               + RfpOppW * ((ss - 1)->staticEval != VALUE_NONE
                                      && ss->staticEval > -(ss - 1)->staticEval)
                - (ss - 1)->statScore / 300 >= beta
         && eval >= beta && eval < VALUE_TB_WIN_IN_MAX_PLY && (!ttMove || ttCapture))
@@ -1372,7 +1396,14 @@ moves_loop:
             // rend le score trouve des que celui-ci bat beta (Stockfish).
             else if (MultiCutSf ? value >= beta && std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY
                                 : singularBeta >= beta)
+            {
+                if (MultiCutCorr && !ss->inCheck && value > ss->staticEval)
+                    update_correction_history(
+                      pos, ss, thisThread,
+                      std::clamp(int(value - ss->staticEval) * 664 / 1024,
+                                 -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4));
                 return MultiCutSf ? value : singularBeta;
+            }
 
             else if (ttValue >= beta)
                 extension = NegExtSf ? -3 : -2;
@@ -1667,18 +1698,7 @@ moves_loop:
                                      -CORRECTION_HISTORY_LIMIT / 4,
                                      CORRECTION_HISTORY_LIMIT / 4);
 
-        thisThread->correctionHistory[us][correction_index(pos.pawn_key())] << bonus;
-        thisThread->nonPawnCorrection[WHITE][us][correction_index(pos.non_pawn_key(WHITE))] << bonus;
-        thisThread->nonPawnCorrection[BLACK][us][correction_index(pos.non_pawn_key(BLACK))] << bonus;
-        if (CorrMinorWeight)
-            thisThread->minorCorrection[us][correction_index(minor_key(pos))] << bonus;
-        if (CorrMajorWeight)
-            thisThread->majorCorrection[us][correction_index(major_key(pos))] << bonus;
-
-        const Move pm = (ss - 1)->currentMove;
-        if (pm.is_ok())
-            (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(pm.to_sq())][pm.to_sq()]
-              << bonus;
+        update_correction_history(pos, ss, thisThread, bonus);
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);

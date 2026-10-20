@@ -413,6 +413,9 @@ def main():
                     help="poids flottants (.pt) a reprendre : affinage d'un reseau deja entraine")
     ap.add_argument("--save-pt", default="",
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
+    ap.add_argument("--checkpoint", default="",
+                    help="point de reprise ecrit a chaque epoque ; s'il existe au "
+                         "lancement, l'entrainement reprend a l'epoque suivante")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
@@ -509,7 +512,23 @@ def main():
         return s_loss / len(sel), s_err / len(sel)
 
     cp_err = float("nan")
-    for epoch in range(1, args.epochs + 1):
+    first  = 1
+    # Reprise : un arret (veille, PC rendu a l'utilisateur) ne coute plus que
+    # l'epoque en cours. Les donnees et la separation validation/entrainement
+    # dependent de --seed, donc elles sont les memes au redemarrage.
+    if args.checkpoint and os.path.exists(args.checkpoint):
+        ck = torch.load(args.checkpoint, map_location=dev, weights_only=False)
+        model.load_state_dict(ck["model"])
+        opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"])
+        best, best_state = tuple(ck["best"]), ck["best_state"]
+        torch.set_rng_state(ck["rng"].cpu())
+        if dev == "cuda" and ck.get("rng_cuda") is not None:
+            torch.cuda.set_rng_state(ck["rng_cuda"].cpu())
+        first = ck["epoch"] + 1
+        print(f"reprise du point {args.checkpoint} : epoque {first}/{args.epochs}, "
+              f"meilleure {best[1]:.1f} cp", flush=True)
+    for epoch in range(first, args.epochs + 1):
         model.train()
         order = torch.randperm(split, device=dev)
         tot = 0.0
@@ -544,6 +563,15 @@ def main():
         if cp_err < best[1]:
             best = (vloss, cp_err, epoch)
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+
+        if args.checkpoint:
+            tmp = args.checkpoint + ".tmp"
+            torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
+                        "sched": sched.state_dict(), "epoch": epoch, "best": list(best),
+                        "best_state": best_state, "rng": torch.get_rng_state(),
+                        "rng_cuda": torch.cuda.get_rng_state() if dev == "cuda" else None},
+                       tmp)
+            os.replace(tmp, args.checkpoint)
 
         if not args.quiet:
             print(f"  epoque {epoch:3d}/{args.epochs}  perte {tot/steps:.5f}  "
