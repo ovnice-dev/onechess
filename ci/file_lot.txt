@@ -2,6 +2,7 @@
 # signature 1085213. NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
+Mat4_92vs72|EvalFile=reseau/essais/mat4_92M.nnue|0 5|8|1000|10|EvalFile=reseau/essais/mat4_72M.nnue
 HistDecay|HistDecay=1|0 3|8|1000|10|
 CorrMinMaj|CorrMinorWeight=1 CorrMajorWeight=1|0 3|8|1000|10|
 SPSA3|LmrBase=60 LmrDivisor=263 LmrHistDiv=13486 RfpMargin=76 RfpImprovingBonus=21 NmpEvalDiv=238 FutilityMargin=113 HistPruneMargin=3557 SeeCaptureMargin=141 SeeQuietMargin=12 ProbcutMargin=184 SingularBetaFactor=24 SingularExtraMargin=19 StatBonusMul=260 StatBonusMax=1790 StatMalusMul=459 StatMalusMax=1816 QsFutilityMargin=112 QsDeltaMargin=147 RazorMargin=303 AspirationDelta=11 CorrHistDiv=11949 MalusDecay=912 ThreatOrder=50|0 3|8|1000|10|
