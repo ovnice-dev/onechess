@@ -381,7 +381,6 @@ void Thread::iterative_deepening() {
     Value alpha = -VALUE_INFINITE, beta = VALUE_INFINITE;
     Move  lastBestMove  = Move::none();
     Depth lastBestDepth = 0;
-    int   failHighRecovery = 0;
     double bestMoveChanges = 0.0;  // decroit de moitie a chaque iteration
     Value prevIterScore = -VALUE_INFINITE;  // score de l'iteration precedente
 
@@ -400,13 +399,6 @@ void Thread::iterative_deepening() {
 
     // L'historique pres de la racine ne vaut que pour CETTE racine
     lowPlyHistory.fill(0);
-
-    // HistDecay : ce qui a ete appris aux coups precedents de la partie pese
-    // un peu moins a chaque nouvelle recherche (x 729/1024, Stockfish).
-    if (HistDecay)
-        for (Color c : {WHITE, BLACK})
-            for (auto& e : mainHistory[c])
-                e = std::int16_t(int(e) * 729 / 1024);
 
     rootPos.set_thread(this);
 
@@ -457,18 +449,13 @@ void Thread::iterative_deepening() {
         }
 
         int failedHighCnt = 0;
-        // FhRecovery (Stockfish, 13-09-2026) : apres une iteration qui a
-        // echoue haut, on remonte la profondeur par paliers au lieu de
-        // repartir d'un coup a la profondeur pleine.
-        if (FhRecovery)
-            failHighRecovery = std::max(0, failHighRecovery - 2);
 
         while (true)
         {
             // Un echec haut repete signifie que la recherche se noie : on
             // reduit la profondeur pour rendre l'echec exploitable.
             const Depth adjustedDepth =
-              std::max(1, rootDepth - failedHighCnt - (FhRecovery ? failHighRecovery : 0));
+              std::max(1, rootDepth - failedHighCnt);
 
             rootDelta = beta - alpha;
             bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
@@ -497,9 +484,6 @@ void Thread::iterative_deepening() {
 
             assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
         }
-
-        if (FhRecovery && failedHighCnt > 0)
-            failHighRecovery = (failedHighCnt + 1) / 2 + 2;
 
         bestMoveChanges /= 2.0;
 
@@ -677,15 +661,6 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
     // Nulle ou profondeur maximale
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
         return (ss->ply >= MAX_PLY && !ss->inCheck) ? Eval::evaluate(pos) : VALUE_DRAW;
-
-    // Meme chose qu'en recherche principale : la nulle disponible releve
-    // le plancher.
-    if (UpRep && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
-    {
-        alpha = UpRep == 2 ? Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2)) : VALUE_DRAW;
-        if (alpha >= beta)
-            return alpha;
-    }
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -914,15 +889,6 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         if (alpha >= beta)
             return alpha;
 
-        // Si un coup disponible ramene a une position deja vue, le camp au
-        // trait tient la nulle : alpha ne peut plus descendre en dessous. La
-        // table de coucou repond sans generer le moindre coup.
-        if (UpRep && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
-        {
-            alpha = UpRep == 2 ? Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2)) : VALUE_DRAW;
-            if (alpha >= beta)
-                return alpha;
-        }
     }
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
@@ -931,7 +897,6 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     (ss + 2)->killers[0] = (ss + 2)->killers[1] = Move::none();
     (ss + 2)->cutoffCnt                          = 0;
     ss->statScore                                = 0;
-    (ss + 1)->priorNmpFh                         = 0;
     const int priorReduction                     = ss->reduction;
     ss->reduction                                = 0;
 
@@ -1093,8 +1058,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     }
 
     // --------------------------------------------------------- razoring
-    // RazorAllOnly : seulement aux noeuds ALL, comme Stockfish depuis le 18-09-2026.
-    if (!PvNode && (!RazorAllOnly || !cutNode) && depth <= RazorMaxDepth
+    if (!PvNode && depth <= RazorMaxDepth
         && eval + RazorMargin * depth < alpha)
     {
         // Contrairement au RFP, ce n'est pas une coupure seche : on verifie
@@ -1120,12 +1084,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         return beta > VALUE_TB_LOSS_IN_MAX_PLY ? (eval + beta) / 2 : eval;
 
     // ------------------------------------------------------ coup nul (NMP)
-    // NmpCutOnly : coup nul reserve aux noeuds CUT, comme Stockfish.
-    // NmpPriorFh (Stockfish, 09-09-2026) : chaque coup nul deja reussi chez
-    // un frere rend le suivant plus facile a tenter.
-    if (!PvNode && (!NmpCutOnly || cutNode) && (ss - 1)->currentMove != Move::null() && !excludedMove
-        && depth >= NmpMinDepth && eval + NmpPriorFh * ss->priorNmpFh >= beta
-        && ss->staticEval + NmpPriorFh * ss->priorNmpFh >= beta
+    if (!PvNode && (ss - 1)->currentMove != Move::null() && !excludedMove
+        && depth >= NmpMinDepth && eval >= beta && ss->staticEval >= beta
         && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
         && beta > VALUE_TB_LOSS_IN_MAX_PLY)
     {
@@ -1146,10 +1106,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             // Une recherche de verification, sans coup nul, evite les
             // catastrophes de zugzwang en finale.
             if (thisThread->nmpMinPly || depth < 14)
-            {
-                ++ss->priorNmpFh;
                 return nullValue;
-            }
 
             assert(!thisThread->nmpMinPly);
 
@@ -1160,10 +1117,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             thisThread->nmpMinPly = 0;
 
             if (v >= beta)
-            {
-                ++ss->priorNmpFh;
                 return nullValue;
-            }
         }
     }
 
@@ -1385,23 +1339,11 @@ moves_loop:
 
             if (value < singularBeta)
             {
-                if (ExtSf)
-                {
-                    // ExtSf : extensions double et triple selon les marges de
-                    // Stockfish (larges aux noeuds PV et quand le coup de
-                    // table est une prise).
-                    const int dm = -2 + 204 * PvNode - 152 * !ttCapture;
-                    const int tm = 70 + 279 * PvNode - 188 * !ttCapture + 81 * ss->ttPv;
-                    extension    = 1 + (value < singularBeta - dm) + (value < singularBeta - tm);
-                }
-                else
-                {
-                    extension = 1;
+                extension = 1;
 
-                    // Nettement singulier : on creuse encore
-                    if (!PvNode && value < singularBeta - SingularExtraMargin)
-                        extension = 2;
-                }
+                // Nettement singulier : on creuse encore
+                if (!PvNode && value < singularBeta - SingularExtraMargin)
+                    extension = 2;
             }
 
             // Le coup de TT n'est pas singulier et il bat deja beta : la
@@ -1658,39 +1600,9 @@ moves_loop:
     // ce precedent etait donc bon, on le recompense.
     else if (!priorCapture && prevSq != SQ_NONE)
     {
-        // Version Stockfish (+3,1 / +5,0) : la recompense grandit quand le
-        // coup precedent etait tardif, mal classe par l'historique, ou quand
-        // l'echec bas est net des deux cotes ; elle va aussi a l'historique
-        // principal et a celui des structures de pions. Inerte tant que
-        // PriorCmBonus vaut 0.
-        if (PriorCmBonus)
-        {
-            int bonusScale = -241 - (ss - 1)->statScore / 98 + std::min(59 * depth, 420)
-                           + 186 * ((ss - 1)->moveCount > 9)
-                           + 142 * (!ss->inCheck && bestValue <= ss->staticEval - 106)
-                           + 159 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 68);
-            bonusScale            = std::max(bonusScale, 0);
-            const int scaledBonus = std::min(150 * depth - 85, 1337) * bonusScale;
-
-            update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                          scaledBonus * 263 / 16384);
-            thisThread->mainHistory[~us][hist_index((ss - 1)->currentMove, (ss - 1)->threats)]
-              << scaledBonus * 215 / 32768;
-            if (type_of(pos.piece_on(prevSq)) != PAWN
-                && ((ss - 1)->currentMove).type_of() != PROMOTION)
-                thisThread->pawnHistory[pawn_structure_index(pos.pawn_key())]
-                                       [pos.piece_on(prevSq)][prevSq]
-                  << scaledBonus * 324 / 8192;
-        }
-        else
-            update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                          stat_bonus(depth) * (1 + (bestValue > beta)));
+        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
+                                      stat_bonus(depth) * (1 + (bestValue > beta)));
     }
-
-    // Meme idee quand le coup precedent etait une prise.
-    else if (PriorCmBonus && prevSq != SQ_NONE && pos.captured_piece())
-        thisThread->captureHistory[pos.piece_on(prevSq)][prevSq][type_of(pos.captured_piece())]
-          << 892;
 
     if (PvNode)
         bestValue = std::min(bestValue, maxValue);

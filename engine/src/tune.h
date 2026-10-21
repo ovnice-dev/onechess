@@ -66,19 +66,13 @@
     X(CorrContWeight,                 1,     0,     8) \
     X(CorrMinorWeight,                0,     0,     8) \
     X(CorrMajorWeight,                0,     0,     8) \
-    X(PriorCmBonus,                   0,     0,     1) \
-    X(NmpCutOnly,                     0,     0,     1) \
-    X(RazorAllOnly,                   0,     0,     1) \
     X(TtCutRefine,                    0,     0,     1) \
     X(ThreatHist,                     1,     0,     1) \
-    X(FhRecovery,                     0,     0,     1) \
-    X(NmpPriorFh,                     0,     0,   200) \
     X(FutValue,                       0,     0,     1) \
     X(CapFutility,                    0,     0,     1) \
     X(ProbcutSf,                      0,     0,     1) \
     X(SmallProbcut,                   0,     0,   800) \
     X(IirSf,                          0,     0,     1) \
-    X(ExtSf,                          0,     0,     1) \
     X(NegExtSf,                       0,     0,     1) \
     X(MultiCutSf,                     0,     0,     1) \
     X(ImprovingBeta,                  0,     0,     1) \
@@ -97,7 +91,6 @@
     X(QsFailFirm,                     0,     0,     1) \
     X(ContHist6,                      0,     0,     1) \
     X(EvalDiffHist,                   0,     0,     1) \
-    X(HistDecay,                      0,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
     X(BonusSf,                        0,     0,     1) \
     X(ThreatOrder,                    48,     0,    96) \
@@ -108,7 +101,6 @@
     X(LmrDeeperMargin,                0,     0,   200) \
     X(LmrShallowerMargin,             0,     0,    60) \
     X(Hindsight,                      0,     0,     1) \
-    X(UpRep,                          0,     0,     2) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \

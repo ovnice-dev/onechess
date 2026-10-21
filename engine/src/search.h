@@ -32,7 +32,6 @@ struct Stack {
     bool            ttHit;
     int             cutoffCnt;
     int             reduction;   // reduction subie, lue par le fils
-    int             priorNmpFh;  // coups nuls reussis chez les freres (NmpPriorFh)
     Bitboard        threats;     // menaces du noeud, pour l'index de l'historique principal
 };
 
