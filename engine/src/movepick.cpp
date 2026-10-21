@@ -169,6 +169,10 @@ void MovePicker::score() {
             v += (*continuationHistory[1])[pc][to];
             v += (*continuationHistory[2])[pc][to];
             v += (*continuationHistory[3])[pc][to];
+            // ContHist6 : la continuation a 6 plis est tenue a jour par la
+            // recherche, mais n'etait jamais lue pour le tri (Stockfish la lit).
+            if (Tune::ContHist6)
+                v += (*continuationHistory[5])[pc][to];
             v += (*pawnHistory)[pawn_structure_index(pos.pawn_key())][pc][to];
 
             // Pres de la racine, ce qui a coupe dans CE noeud aux iterations

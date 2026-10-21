@@ -635,9 +635,24 @@ void refresh_side(Accumulator& acc, const Position& pos, Color p) {
         const Bitboard pw = pos.pieces(WHITE, PAWN), pb = pos.pieces(BLACK, PAWN);
         int            idx[160];
         const int      n = collect_pairs(p, pw, pb, pw, pb, idx);
+        // Lignes int16 ajoutees par paquets de 16 (AVX2) : un recalcul porte
+        // une quarantaine de paires, et les experts par materiel en font un a
+        // chaque changement de bande.
         for (int k = 0; k < n; ++k)
+        {
+            const std::int16_t* w = pair_weights(idx[k]);
+#if defined(__AVX2__)
+            for (int j = 0; j < HIDDEN_SIZE; j += 16)
+            {
+                __m256i a = _mm256_load_si256(reinterpret_cast<const __m256i*>(acc.v[p] + j));
+                a = _mm256_add_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + j)));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(acc.v[p] + j), a);
+            }
+#else
             for (int j = 0; j < HIDDEN_SIZE; ++j)
-                acc.v[p][j] = std::int16_t(acc.v[p][j] + pair_weights(idx[k])[j]);
+                acc.v[p][j] = std::int16_t(acc.v[p][j] + w[j]);
+#endif
+        }
     }
 }
 

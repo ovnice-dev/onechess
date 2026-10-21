@@ -744,7 +744,8 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory,
-      (ss - 3)->continuationHistory, (ss - 4)->continuationHistory};
+      (ss - 3)->continuationHistory, (ss - 4)->continuationHistory,
+      (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
 
     const Square prevSq = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq()
                                                           : SQ_NONE;
@@ -1257,7 +1258,8 @@ moves_loop:
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory,
-      (ss - 3)->continuationHistory, (ss - 4)->continuationHistory};
+      (ss - 3)->continuationHistory, (ss - 4)->continuationHistory,
+      (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
 
     const Move counterMove =
       prevSq != SQ_NONE ? Move(thisThread->counterMoves[pos.piece_on(prevSq)][prevSq])

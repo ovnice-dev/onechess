@@ -36,7 +36,7 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int mov
 
     // Sous la seconde, en mort subite : on suppose beaucoup moins de coups a
     // jouer, ce qui empeche de s'endetter en fin de partie. Stockfish.
-    if (TmSfAlloc && limits.movestogo == 0 && limits.time[us] < 1000)
+    if ((TmSfAlloc || TmLowMtg) && limits.movestogo == 0 && limits.time[us] < 1000)
         mtg = std::max(1, int(limits.time[us] * 0.05));
 
     // Temps reellement utilisable, une fois retiree la latence d'echange avec

@@ -36,3 +36,5 @@ TtCutHistSf|TtCutHistSf=1|0 3|6|1000|10|
 RfpOwn|RfpOwn=1|0 3|6|1000|10|
 QsFailFirm|QsFailFirm=1|0 3|6|1000|10|
 Surprise130|TmSurprisePct=130|0 5|8|300|12||tc:10+0.1
+ContHist6|ContHist6=1|0 3|6|1000|10|
+LowMtg|TmLowMtg=1|0 5|8|300|12||tc:10+0.1
