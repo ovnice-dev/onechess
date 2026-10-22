@@ -1,15 +1,11 @@
 # File des SPRT en lot (ci/file_lot.sh). Reference : valeurs par defaut,
-# signature 1111525 (reseau mat4 92,5 M depuis le 20-10, 23 h). NE PAS changer les valeurs par defaut tant que la file
+# signature 1169737 (reseau mat4 92,5 M + Combo5, depuis le 22-10). NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
-PairesTC|EvalFile=reseau/essais/pp512_92M.nnue|0 5|8|300|12|EvalFile=reseau/essais/p512_92M.nnue|tc:10+0.1
-CorrMinMaj|CorrMinorWeight=1 CorrMajorWeight=1|0 3|8|1000|10|
-SPSA3|LmrBase=60 LmrDivisor=263 LmrHistDiv=13486 RfpMargin=76 RfpImprovingBonus=21 NmpEvalDiv=238 FutilityMargin=113 HistPruneMargin=3557 SeeCaptureMargin=141 SeeQuietMargin=12 ProbcutMargin=184 SingularBetaFactor=24 SingularExtraMargin=19 StatBonusMul=260 StatBonusMax=1790 StatMalusMul=459 StatMalusMax=1816 QsFutilityMargin=112 QsDeltaMargin=147 RazorMargin=303 AspirationDelta=11 CorrHistDiv=11949 MalusDecay=912 ThreatOrder=50|0 3|8|1000|10|
 PriorCm|PriorCmBonus=1|0 3|6|1000|10|
 TtCut|TtCutRefine=1|0 3|6|1000|10|
 FhRecovery|FhRecovery=1|0 3|6|1000|10|
 ExtSf|ExtSf=1|0 3|6|1000|10|
-ProbcutSf|ProbcutSf=1|0 3|6|1000|10|
 SmallProbcut|SmallProbcut=428|0 3|6|1000|10|
 IirSf|IirSf=1|0 3|6|1000|10|
 FutValue|FutValue=1|0 3|6|1000|10|
@@ -18,12 +14,7 @@ MultiCutSf|MultiCutSf=1|0 3|6|1000|10|
 NegExtSf|NegExtSf=1|0 3|6|1000|10|
 ImprovingBeta|ImprovingBeta=1|0 3|6|1000|10|
 RfpOppW|RfpOppW=30|0 3|6|1000|10|
-PostLmrSf|PostLmrSf=1|0 3|6|1000|10|
-EvalDiff|EvalDiffHist=1|0 3|6|1000|10|
 LmrFrac|LmrFrac=1|-3 1|6|1000|10|
-LmrAllScale|LmrFrac=1 LmrAllScale=1|0 3|6|1000|10|LmrFrac=1
-LmrAlphaEval|LmrFrac=1 LmrAlphaEval=1|0 3|6|1000|10|LmrFrac=1
-LmrCutoffSf|LmrFrac=1 LmrCutoffSf=1|0 3|6|1000|10|LmrFrac=1
 NoKillers|NoKillers=1|-3 1|6|1000|10|
 NoCounter|NoCounter=1|-3 1|6|1000|10|
 Hindsight|Hindsight=1|0 3|6|1000|10|

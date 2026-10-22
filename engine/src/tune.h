@@ -14,19 +14,19 @@
                                                        \
     X(RfpMaxDepth,                    8,     3,    15) \
     X(RfpMargin,                     76,    40,   200) \
-    X(RfpImprovingBonus,             23,     0,    80) \
+    X(RfpImprovingBonus,             21,     0,    80) \
                                                        \
     X(RazorMaxDepth,                  3,     1,     8) \
-    X(RazorMargin,                  295,   100,   700) \
+    X(RazorMargin,                  303,   100,   700) \
                                                        \
     X(NmpMinDepth,                    3,     2,     8) \
     X(NmpBaseReduction,               4,     2,     6) \
     X(NmpDepthDiv,                    3,     2,     8) \
-    X(NmpEvalDiv,                   213,    50,   600) \
+    X(NmpEvalDiv,                   238,    50,   600) \
     X(NmpMaxEvalR,                    3,     0,     6) \
                                                        \
     X(ProbcutMinDepth,                5,     3,    10) \
-    X(ProbcutMargin,                187,    80,   350) \
+    X(ProbcutMargin,                184,    80,   350) \
                                                        \
     X(IirMinDepth,                    4,     2,    10) \
                                                        \
@@ -34,50 +34,50 @@
     X(LmpDepthFactor,                 1,     1,     4) \
                                                        \
     X(FutilityMaxDepth,               7,     3,    15) \
-    X(FutilityMargin,               114,    50,   250) \
+    X(FutilityMargin,               113,    50,   250) \
                                                        \
     X(HistPruneMaxDepth,              5,     2,    10) \
-    X(HistPruneMargin,             3351,  1000, 12000) \
+    X(HistPruneMargin,             3557,  1000, 12000) \
                                                        \
-    X(SeeCaptureMargin,             151,    50,   400) \
+    X(SeeCaptureMargin,             141,    50,   400) \
     X(SeeQuietMargin,                12,     5,   120) \
                                                        \
-    X(LmrBase,                       62,    20,   150) \
-    X(LmrDivisor,                   259,   120,   400) \
-    X(LmrHistDiv,                  14088,  2000, 30000) \
+    X(LmrBase,                       60,    20,   150) \
+    X(LmrDivisor,                   263,   120,   400) \
+    X(LmrHistDiv,                  13486,  2000, 30000) \
                                                        \
     X(SingularMinDepth,               6,     4,    12) \
-    X(SingularBetaFactor,            23,     8,    64) \
-    X(SingularExtraMargin,           20,     0,   100) \
+    X(SingularBetaFactor,            24,     8,    64) \
+    X(SingularExtraMargin,           19,     0,   100) \
                                                        \
-    X(StatBonusMul,                 253,    50,   400) \
+    X(StatBonusMul,                 260,    50,   400) \
     X(StatBonusSub,                  81,     0,   400) \
-    X(StatBonusMax,                1655,   500,  4000) \
-    X(StatMalusMul,                 478,   100,   900) \
+    X(StatBonusMax,                1790,   500,  4000) \
+    X(StatMalusMul,                 459,   100,   900) \
     X(StatMalusSub,                 111,     0,   400) \
-    X(StatMalusMax,                1864,   500,  4000) \
+    X(StatMalusMax,                1816,   500,  4000) \
                                                        \
-    X(QsDeltaMargin,                171,    50,   500) \
-    X(QsFutilityMargin,             104,    50,   400) \
+    X(QsDeltaMargin,                147,    50,   500) \
+    X(QsFutilityMargin,             112,    50,   400) \
                                                        \
-    X(CorrHistDiv,                 11565,  1024, 65536) \
+    X(CorrHistDiv,                 11949,  1024, 65536) \
     X(CorrHistWeight,                 1,     1,     8) \
     X(CorrNpWeight,                   1,     0,     8) \
     X(CorrContWeight,                 1,     0,     8) \
-    X(CorrMinorWeight,                0,     0,     8) \
-    X(CorrMajorWeight,                0,     0,     8) \
+    X(CorrMinorWeight,                1,     0,     8) \
+    X(CorrMajorWeight,                1,     0,     8) \
     X(TtCutRefine,                    0,     0,     1) \
     X(ThreatHist,                     1,     0,     1) \
     X(FutValue,                       0,     0,     1) \
     X(CapFutility,                    0,     0,     1) \
-    X(ProbcutSf,                      0,     0,     1) \
+    X(ProbcutSf,                      1,     0,     1) \
     X(SmallProbcut,                   0,     0,   800) \
     X(IirSf,                          0,     0,     1) \
     X(NegExtSf,                       0,     0,     1) \
     X(MultiCutSf,                     0,     0,     1) \
     X(ImprovingBeta,                  0,     0,     1) \
     X(RfpOppW,                        0,     0,   200) \
-    X(PostLmrSf,                      0,     0,     1) \
+    X(PostLmrSf,                      1,     0,     1) \
     X(NoKillers,                      0,     0,     1) \
     X(NoCounter,                      0,     0,     1) \
     X(LmrFrac,                        0,     0,     1) \
@@ -90,14 +90,14 @@
     X(RfpOwn,                         0,     0,     1) \
     X(QsFailFirm,                     0,     0,     1) \
     X(ContHist6,                      0,     0,     1) \
-    X(EvalDiffHist,                   0,     0,     1) \
+    X(EvalDiffHist,                   1,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
     X(BonusSf,                        0,     0,     1) \
-    X(ThreatOrder,                    48,     0,    96) \
+    X(ThreatOrder,                    50,     0,    96) \
     X(CheckSeeMargin,                 0,     0,   400) \
     X(LowPlyHist,                     0,     0,    16) \
     X(CapStatMul,                     0,     0,  4000) \
-    X(MalusDecay,                   921,   512,  1024) \
+    X(MalusDecay,                   912,   512,  1024) \
     X(LmrDeeperMargin,                0,     0,   200) \
     X(LmrShallowerMargin,             0,     0,    60) \
     X(Hindsight,                      0,     0,     1) \
