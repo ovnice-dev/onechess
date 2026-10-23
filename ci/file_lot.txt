@@ -1,31 +1,9 @@
 # File des SPRT en lot (ci/file_lot.sh). Reference : valeurs par defaut,
-# signature 1169737 (reseau mat4 92,5 M + Combo5, depuis le 22-10). NE PAS changer les valeurs par defaut tant que la file
+# signature 1158338 (reseau mat4 92,5 M + Combo5 + Combo6, depuis le 23-10). NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
-PriorCm|PriorCmBonus=1|0 3|6|1000|10|
-TtCut|TtCutRefine=1|0 3|6|1000|10|
-FhRecovery|FhRecovery=1|0 3|6|1000|10|
-ExtSf|ExtSf=1|0 3|6|1000|10|
-SmallProbcut|SmallProbcut=428|0 3|6|1000|10|
-IirSf|IirSf=1|0 3|6|1000|10|
-FutValue|FutValue=1|0 3|6|1000|10|
-CapFutility|CapFutility=1|0 3|6|1000|10|
-MultiCutSf|MultiCutSf=1|0 3|6|1000|10|
-NegExtSf|NegExtSf=1|0 3|6|1000|10|
-ImprovingBeta|ImprovingBeta=1|0 3|6|1000|10|
-RfpOppW|RfpOppW=30|0 3|6|1000|10|
-LmrFrac|LmrFrac=1|-3 1|6|1000|10|
-NoKillers|NoKillers=1|-3 1|6|1000|10|
-NoCounter|NoCounter=1|-3 1|6|1000|10|
-Hindsight|Hindsight=1|0 3|6|1000|10|
-LmrDeepShal|LmrDeeperMargin=53 LmrShallowerMargin=8|0 3|6|1000|10|
 CapStat|CapStatMul=873|0 3|6|1000|10|
-ContWSf|ContWeightsSf=1|0 3|6|1000|10|
-BonusSf|BonusSf=1|0 3|6|1000|10|
-BadQuiets|BadQuiets=14000|0 3|6|1000|10|
 MultiCutCorr|MultiCutCorr=1|0 3|6|1000|10|
-TtCutHistSf|TtCutHistSf=1|0 3|6|1000|10|
-RfpOwn|RfpOwn=1|0 3|6|1000|10|
 QsFailFirm|QsFailFirm=1|0 3|6|1000|10|
 Surprise130|TmSurprisePct=130|0 5|8|300|12||tc:10+0.1
 ContHist6|ContHist6=1|0 3|6|1000|10|
