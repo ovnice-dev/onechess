@@ -32,7 +32,7 @@ nuage() {   # Kaggle + GitHub -> fichiers du cache
 
 barre() {  # barre n total largeur
   local n=$1 t=$2 l=${3:-30} p
-  p=$(( t>0 ? n*l/t : 0 )); printf '['; printf '%*s' "$p" '' | tr ' ' '#'; printf '%*s' $((l-p)) '' | tr ' ' '.'; printf ']'
+  p=$(( t>0 ? n*l/t : 0 )); [ $p -gt $l ] && p=$l; printf "["; printf "%*s" "$p" "" | tr " " "#"; printf "%*s" $((l-p)) "" | tr " " "."; printf "]"
 }
 
 entrainements() {
@@ -67,7 +67,7 @@ entrainements() {
 donnees() {
   echo "${B}== DONNEES (PC) ==${Z}"
   local pos=$(find data/nnue_elite -name '*.bin' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END {printf "%d", s/32}')
-  printf "  lot etiquete : ${B}%s${Z} positions   %s 90 M\n" "$(echo "$pos" | sed -E ':a;s/([0-9])([0-9]{3})($| )/\1 \2\3/;ta')" "$(barre "$((pos/1000000))" 90 25)"
+  printf "  lot etiquete : ${B}%s${Z} positions   %s cible 250 M\n" "$(echo "$pos" | sed -E ':a;s/([0-9])([0-9]{3})($| )/\1 \2\3/;ta')" "$(barre "$((pos/1000000))" 250 25)"
   local a=$(( $(date +%s) - $(stat -c %Y data/elite_campaign.log) ))
   echo "  campagne   : $(grep -vE '^###' data/elite_campaign.log | grep -E 'fait|ARRET|etiquet|positions' | tail -1 | cut -c1-110)"
   echo "  conversion : $(tail -1 data/elite_conversion.log | cut -c1-110)"
