@@ -31,6 +31,11 @@ ANCHORS = {
     "Avalanche-2.1.0": (3350, 9),
     "Reckless-0.7.0": (3421, 12),
     "RubiChess-20240817": (3569, 7),
+    # Ajoutes le 24-10-2026 (liste du jour, notes mono-coeur) : Onechess a
+    # depasse les trois plus faibles, trop loin pour mesurer finement.
+    "Berserk-13": (3587, 5),
+    "Caissa-1.24": (3594, 9),
+    "Stormphrax-7.0.0": (3582, 9),
 }
 
 PAIR_VALUES = (0.0, 0.25, 0.5, 0.75, 1.0)

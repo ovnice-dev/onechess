@@ -857,7 +857,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture;
     bool  capture, ttCapture;
-    int   moveCount, captureCount, quietCount;
+    int   moveCount, captureCount, quietCount, alphaRaises = 0;
 
     Value unadjustedStaticEval = VALUE_NONE;
 
@@ -868,6 +868,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     moveCount = captureCount = quietCount = ss->moveCount = 0;
     bestValue                                             = -VALUE_INFINITE;
     maxValue                                              = VALUE_INFINITE;
+    ss->doubleExt                                         = (ss - 1)->doubleExt;
 
     // Le thread principal surveille l'horloge pour tout le monde
     if (thisThread->is_main() && (thisThread->nodes.load(std::memory_order_relaxed) & 1023) == 0)
@@ -991,6 +992,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     {
         ss->staticEval = eval = VALUE_NONE;
         improving             = false;
+        ss->corrAbs           = 0;
         goto moves_loop;
     }
     else if (excludedMove)
@@ -1000,6 +1002,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     {
         unadjustedStaticEval = tte->eval();
         ss->staticEval = eval = corrected_eval(unadjustedStaticEval, thisThread, pos, ss);
+        ss->corrAbs           = std::abs(int(ss->staticEval - unadjustedStaticEval));
 
         if (ttValue != VALUE_NONE
             && (tte->bound() & (ttValue > eval ? BOUND_LOWER : BOUND_UPPER)))
@@ -1009,6 +1012,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     {
         unadjustedStaticEval  = Eval::evaluate(pos);
         ss->staticEval = eval = corrected_eval(unadjustedStaticEval, thisThread, pos, ss);
+        ss->corrAbs           = std::abs(int(ss->staticEval - unadjustedStaticEval));
 
         // On enregistre l'evaluation meme sans score : la prochaine visite
         // n'aura pas a la recalculer.
@@ -1197,6 +1201,11 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             depth -= 2;
     }
 
+    // IirShallow : meme avec un coup de table, une entree trop peu profonde
+    // trie mal un noeud CUT (PlentyChess, Viridithas, Caissa).
+    if (IirShallow && cutNode && ttHit && ttMove && depth >= 8 && tte->depth() + 4 <= depth)
+        depth -= 1;
+
     if (depth <= 0)
         return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta, 0);
 
@@ -1327,7 +1336,11 @@ moves_loop:
         // excluant ce coup ; si tous les autres echouent, extension.
         if (!rootNode && depth >= SingularMinDepth && move == ttMove && !excludedMove
             && std::abs(ttValue) < VALUE_TB_WIN_IN_MAX_PLY && (tte->bound() & BOUND_LOWER)
-            && tte->depth() >= depth - 3)
+            && tte->depth() >= depth - 3
+            // ExtLimit : pas d'extension au-dela de deux fois la profondeur
+            // de l'iteration, sinon les lignes forcees font exploser l'arbre
+            // (Stockfish, PlentyChess, Viridithas, Alexandria).
+            && (!ExtLimit || ss->ply < thisThread->rootDepth * 2))
         {
             const Value singularBeta  = ttValue - (SingularBetaFactor * depth) / 16;
             const Depth singularDepth = (depth - 1) / 2;
@@ -1341,9 +1354,17 @@ moves_loop:
             {
                 extension = 1;
 
-                // Nettement singulier : on creuse encore
-                if (!PvNode && value < singularBeta - SingularExtraMargin)
+                // Nettement singulier : on creuse encore. DoubleExtCap borne le
+                // nombre d'extensions doubles sur la ligne ; TripleExtMargin
+                // ajoute un troisieme pli pour un tranquille tres singulier.
+                if (!PvNode && value < singularBeta - SingularExtraMargin
+                    && (!DoubleExtCap || ss->doubleExt < DoubleExtCap))
+                {
                     extension = 2;
+                    if (TripleExtMargin && !ttCapture && value < singularBeta - TripleExtMargin)
+                        extension = 3;
+                    ss->doubleExt++;
+                }
             }
 
             // Le coup de TT n'est pas singulier et il bat deja beta : la
@@ -1372,6 +1393,19 @@ moves_loop:
         // decroit jamais dans une sequence d'echecs.
         else if (givesCheck && depth > 8 && pos.see_ge(move))
             extension = 1;
+
+        // Ldse : sous la profondeur de l'extension singuliere, un noeud CUT
+        // dont l'evaluation est bien sous alpha prolonge son coup de table
+        // sans recherche d'exclusion (Reckless, Stormphrax).
+        else if (Ldse && move == ttMove && !rootNode && !excludedMove && depth <= 7
+                 && !ss->inCheck && cutNode && ttHit && (tte->bound() & BOUND_LOWER)
+                 && ss->staticEval <= alpha - Ldse)
+            extension = 1;
+
+        // ExtNegCut : une extension negative annonce une coupure : le noeud
+        // est traite comme CUT pour la suite (Stormphrax).
+        if (ExtNegCut && extension < 0)
+            cutNode = true;
 
         newDepth += extension;
 
@@ -1405,6 +1439,20 @@ moves_loop:
         if (ttCapture && !capture)
             r += 1;
         if (!improving)
+            r += 1;
+        // LmrCorr : forte correction d'evaluation = position incertaine, on
+        // reduit moins (Reckless, PlentyChess, Stormphrax, Viridithas...).
+        if (LmrCorr && ss->corrAbs >= LmrCorr)
+            r -= 1;
+        // LmrCheck : un coup qui donne echec est moins reduit.
+        if (LmrCheck && givesCheck)
+            r -= 1;
+        // LmrTtpvFailLow : ancien PV mais la table le donne sous alpha
+        // (PlentyChess, Viridithas, Stormphrax).
+        if (LmrTtpvFailLow && ss->ttPv && ttHit && ttValue != VALUE_NONE && ttValue <= alpha)
+            r += 1;
+        // LmrAlphaRaise : alpha deja ameliore dans ce noeud (Stormphrax, Viridithas).
+        if (LmrAlphaRaise && alphaRaises)
             r += 1;
         if (LmrFrac && LmrCutoffSf)
         {
@@ -1572,6 +1620,14 @@ moves_loop:
                     break;
                 }
 
+                // AlphaDepthRed : une fois alpha ameliore, les coups suivants
+                // ont moins de chances de battre le nouveau score ; on les
+                // cherche un pli moins profond (Stockfish, Berserk, Caissa).
+                if (AlphaDepthRed && depth > 2 && depth < 12
+                    && std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY)
+                    depth -= 1;
+
+                alphaRaises++;
                 alpha = value;
             }
         }
@@ -1594,7 +1650,9 @@ moves_loop:
 
     else if (bestMove)
         update_all_stats(pos, ss, thisThread, bestMove, prevSq, quietsSearched, quietCount,
-                         capturesSearched, captureCount, depth, ttMove, PvNode);
+                         capturesSearched, captureCount,
+                         // HistBoost : coupure nette, bonus d'un pli de plus
+                         depth + (HistBoost && bestValue > beta + HistBoost), ttMove, PvNode);
 
     // Aucun coup n'a battu alpha alors que le precedent etait tranquille :
     // ce precedent etait donc bon, on le recompense.
@@ -1603,6 +1661,12 @@ moves_loop:
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
                                       stat_bonus(depth) * (1 + (bestValue > beta)));
     }
+
+    // FailHighSoft : un score de coupure peu profond est ramene vers beta, il
+    // surestime souvent (Stockfish, Caissa).
+    if (FailHighSoft && bestValue >= beta && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY
+        && std::abs(alpha) < VALUE_TB_WIN_IN_MAX_PLY)
+        bestValue = Value((int(bestValue) * depth + int(beta)) / (depth + 1));
 
     if (PvNode)
         bestValue = std::min(bestValue, maxValue);

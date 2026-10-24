@@ -42,9 +42,12 @@ run() {  # nom chemin
         --openings data/openings.epd --state "$OUT/$1.state" >> "$OUT/$1.log" 2>&1 &
 }
 
-run Leorik-3.0         engines/leorik/Leorik-3.0.1.exe
-run Weiss-2.0          engines/weiss/weiss-pext.exe
-run Avalanche-2.1.0    engines/avalanche-2.1.0.exe
+# 24-10-2026 : Leorik, Weiss et Avalanche (3225 a 3350) remplaces par trois
+# moteurs autour de 3590 ; Onechess etait deja a ~3496 le 14-09. Reckless
+# reste pour la continuite avec les mesures precedentes.
+run Berserk-13         engines/berserk13/berserk-13-avx2-pext.exe
+run Caissa-1.24        engines/caissa124/caissa-1.24-x64-avx2-bmi2.exe
+run Stormphrax-7.0.0   engines/stormphrax7/stormphrax-7.0.0-avx2-bmi2.exe
 run Reckless-0.7.0     engines/reckless-0.7.0.exe
 run RubiChess-20240817 "$RUBI"
 

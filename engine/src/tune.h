@@ -101,6 +101,19 @@
     X(LmrDeeperMargin,                53,     0,   200) \
     X(LmrShallowerMargin,             8,     0,    60) \
     X(Hindsight,                      1,     0,     1) \
+    X(ExtLimit,                       0,     0,     1) \
+    X(TripleExtMargin,                0,     0,   200) \
+    X(DoubleExtCap,                   0,     0,    20) \
+    X(LmrCorr,                        0,     0,   300) \
+    X(LmrCheck,                       0,     0,     1) \
+    X(FailHighSoft,                   0,     0,     1) \
+    X(AlphaDepthRed,                  0,     0,     1) \
+    X(HistBoost,                      0,     0,   200) \
+    X(IirShallow,                     0,     0,     1) \
+    X(LmrTtpvFailLow,                 0,     0,     1) \
+    X(LmrAlphaRaise,                  0,     0,     1) \
+    X(Ldse,                           0,     0,   200) \
+    X(ExtNegCut,                      0,     0,     1) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
