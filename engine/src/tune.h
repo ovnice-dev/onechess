@@ -89,7 +89,7 @@
     X(TtCutHistSf,                    0,     0,     1) \
     X(RfpOwn,                         0,     0,     1) \
     X(QsFailFirm,                     0,     0,     1) \
-    X(ContHist6,                      0,     0,     1) \
+    X(ContHist6,                      1,     0,     1) \
     X(EvalDiffHist,                   1,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
     X(BonusSf,                        0,     0,     1) \
@@ -111,7 +111,7 @@
     X(TmInstMul,                  250,     0,  1000) \
     X(TmClockPct,                 900,     0,  1000) \
     X(TmSfAlloc,                      0,     0,     1) \
-    X(TmSurprisePct,                100,   100,   250) \
+    X(TmSurprisePct,                130,   100,   250) \
     X(TmLowMtg,                       0,     0,     1) \
                                                        \
     X(Rule50Damp,                     0,     0,   512)

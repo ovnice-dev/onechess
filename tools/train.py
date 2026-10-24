@@ -149,21 +149,36 @@ def dedup_recs(recs, k):
     d'ouverture (jusqu'a 7 151 fois la meme) : sans plafond, l'entrainement
     leur donne un poids demesure. On garde les k premiers exemplaires.
     """
+    n   = len(recs)
+    key = np.empty(n, dtype=np.uint64)
     with np.errstate(over="ignore"):
-        q = recs[:, :24].copy().view("<u8")
-        key = q[:, 0] * np.uint64(0x9E3779B97F4A7C15)
-        key ^= (q[:, 1] + np.uint64(0x632BE59BD9B4E019)) * np.uint64(0xC2B2AE3D27D4EB4F)
-        key ^= (q[:, 2] + np.uint64(0x165667B19E3779F9)) * np.uint64(0x94D049BB133111EB)
-        key ^= recs[:, 26].astype(np.uint64) * np.uint64(0xD6E8FEB86659FD93)
+        for a in range(0, n, 1 << 23):          # par morceaux de 8 M : pas de copie geante
+            r = recs[a:a + (1 << 23)]
+            q = np.ascontiguousarray(r[:, :24]).view("<u8")
+            h = q[:, 0] * np.uint64(0x9E3779B97F4A7C15)
+            h ^= (q[:, 1] + np.uint64(0x632BE59BD9B4E019)) * np.uint64(0xC2B2AE3D27D4EB4F)
+            h ^= (q[:, 2] + np.uint64(0x165667B19E3779F9)) * np.uint64(0x94D049BB133111EB)
+            h ^= r[:, 26].astype(np.uint64) * np.uint64(0xD6E8FEB86659FD93)
+            key[a:a + len(h)] = h
     order = np.argsort(key, kind="stable")
-    ks    = key[order]
-    debut = np.r_[True, ks[1:] != ks[:-1]]
-    grp   = np.cumsum(debut) - 1
-    rang  = np.arange(len(ks)) - np.flatnonzero(debut)[grp]
-    garde = np.zeros(len(recs), dtype=bool)
+    key   = key[order]                          # cles triees ; l'ancien tableau est libere
+    debut = np.empty(n, dtype=bool)
+    debut[0] = True
+    np.not_equal(key[1:], key[:-1], out=debut[1:])
+    del key
+    # rang de chaque exemplaire dans son groupe de positions identiques
+    rang = np.arange(n, dtype=np.int32)
+    tete = np.where(debut, rang, 0).astype(np.int32)
+    del debut
+    np.maximum.accumulate(tete, out=tete)
+    rang -= tete
+    del tete
+    garde = np.zeros(n, dtype=bool)
     garde[order[rang < k]] = True
-    print(f"doublons : {len(recs) - int(garde.sum()):,} positions retirees "
-          f"(au plus {k} exemplaires par position), {int(garde.sum()):,} gardees")
+    del order, rang
+    g = int(garde.sum())
+    print(f"doublons : {n - g:,} positions retirees "
+          f"(au plus {k} exemplaires par position), {g:,} gardees", flush=True)
     return recs[garde]
 
 
@@ -178,20 +193,23 @@ def read_raw(pattern, limit=0):
     if not files:
         raise SystemExit(f"aucun fichier ne correspond a {pattern}")
 
-    chunks, total = [], 0
-    for fn in files:
-        raw = np.fromfile(fn, dtype=np.uint8)
-        k = len(raw) // 32
-        if k:
-            chunks.append(raw[: k * 32].reshape(k, 32))
-            total += k
-        if limit and total >= limit:
-            break
-
-    recs = np.concatenate(chunks, axis=0)
+    # Un seul tableau prealloue : une liste de morceaux puis une concatenation
+    # demandaient deux fois la memoire (15 Go pour 237 M de positions).
+    tailles = [os.path.getsize(fn) // 32 for fn in files]
+    total = sum(tailles)
     if limit:
-        recs = recs[:limit]
-    print(f"{len(recs):,} positions lues dans {len(chunks)} fichiers (brut, 32 o)")
+        total = min(total, limit)
+    recs = np.empty((total, 32), dtype=np.uint8)
+    pos, nf = 0, 0
+    for fn, k in zip(files, tailles):
+        if pos >= total:
+            break
+        k = min(k, total - pos)
+        if k:
+            recs[pos:pos + k] = np.fromfile(fn, dtype=np.uint8, count=k * 32).reshape(k, 32)
+            pos += k
+            nf += 1
+    print(f"{total:,} positions lues dans {nf} fichiers (brut, 32 o)")
     return recs
 
 
@@ -532,6 +550,8 @@ def main():
                     help="poids flottants (.pt) a reprendre : affinage d'un reseau deja entraine")
     ap.add_argument("--save-pt", default="",
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
+    ap.add_argument("--essai-a-blanc", type=int, default=0,
+                    help="1 : charge les donnees, retire les doublons, joue un lot, s'arrete")
     ap.add_argument("--dedup", type=int, default=0,
                     help="garde au plus N exemplaires d'une meme position (0 = tout)")
     ap.add_argument("--threats", type=int, default=0,
@@ -667,9 +687,27 @@ def main():
         first = ck["epoch"] + 1
         print(f"reprise du point {args.checkpoint} : epoque {first}/{args.epochs}, "
               f"meilleure {best[1]:.1f} cp", flush=True)
+    if args.essai_a_blanc:
+        # Un lot d'entrainement et une mesure de validation, puis arret : on
+        # verifie la memoire et la chaine complete sans depenser le quota.
+        model.train()
+        sel = torch.arange(0, min(args.batch, split), device=dev)
+        c, sq, stm_b, ob_b, _, tg_b = data.batch(sel)
+        iw, ib = feats(c, sq)
+        loss = ((torch.sigmoid(model(iw, ib, stm_b, ob_b)) - tg_b) ** 2).mean()
+        opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
+        model.eval()
+        with torch.no_grad():
+            vl, ce = eval_set(torch.arange(split, min(n, split + 65536), device=dev))
+        mem = torch.cuda.max_memory_allocated() / 1e9 if dev == "cuda" else 0.0
+        print(f"ESSAI A BLANC REUSSI : perte {loss.item():.5f}, validation {ce:.1f} cp, "
+              f"memoire GPU max {mem:.2f} Go", flush=True)
+        return
     for epoch in range(first, args.epochs + 1):
         model.train()
-        order = torch.randperm(split, device=dev)
+        # Melange sur le processeur, puis envoi : sur la carte, randperm de 211 M
+        # demande 5 a 6 Go de temporaires et a fait deborder une T4 (24-10).
+        order = torch.randperm(split).to(dev)
         tot = 0.0
 
         for k in range(steps):

@@ -1,11 +1,4 @@
 # File des SPRT en lot (ci/file_lot.sh). Reference : valeurs par defaut,
-# signature 1158338 (reseau mat4 92,5 M + Combo5 + Combo6, depuis le 23-10). NE PAS changer les valeurs par defaut tant que la file
+# signature 1231513 (reseau mat4 92,5 M + Combo5-6-7, depuis le 24-10) ; file vide : phase 8 a venir. NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
-Doublons|EvalFile=reseau/essais/mat4_92M_dd4.nnue|0 3|8|1000|10|EvalFile=reseau/onechess.nnue
-CapStat|CapStatMul=873|0 3|6|1000|10|
-MultiCutCorr|MultiCutCorr=1|0 3|6|1000|10|
-QsFailFirm|QsFailFirm=1|0 3|6|1000|10|
-Surprise130|TmSurprisePct=130|0 5|8|300|12||tc:10+0.1
-ContHist6|ContHist6=1|0 3|6|1000|10|
-LowMtg|TmLowMtg=1|0 5|8|300|12||tc:10+0.1

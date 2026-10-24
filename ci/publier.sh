@@ -6,7 +6,7 @@
 # locale `public`, dont l'arbre est celui de main moins les fichiers PRIVES.
 set -e
 cd /c/Onechess
-PRIVES="ROADMAP.md RECHERCHES.md JOURNAL.md REPRENDRE.md"
+PRIVES="ROADMAP.md RECHERCHES.md JOURNAL.md REPRENDRE.md .github/workflows/kaggle_nuit.yml ci/kaggle_nuit/run.py ci/kaggle_nuit/kernel-metadata.json"
 MSG=${1:-"Mise a jour"}
 export GIT_AUTHOR_NAME=ovnice GIT_COMMITTER_NAME=ovnice
 export GIT_AUTHOR_EMAIL=268732922+ovnice-dev@users.noreply.github.com
