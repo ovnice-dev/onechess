@@ -14,3 +14,6 @@ LmrTtpvFailLow|LmrTtpvFailLow=1|0 3|6|1000|10|
 LmrAlphaRaise|LmrAlphaRaise=1|0 3|6|1000|10|
 Ldse25|Ldse=25|0 3|6|1000|10|
 ExtNegCut|ExtNegCut=1|0 3|6|1000|10|
+Ldse50vs25|Ldse=50|0 3|6|1000|10|Ldse=25
+Ldse10vs25|Ldse=10|0 3|6|1000|10|Ldse=25
+Combo8|EvalFile=reseau/essais/mat4_tout_dd4.nnue Ldse=25 ExtLimit=1|0 3|10|300|12|EvalFile=reseau/essais/mat4_tout_dd4.nnue|tc:10+0.1

@@ -561,13 +561,44 @@ def main():
     ap.add_argument("--checkpoint", default="",
                     help="point de reprise ecrit a chaque epoque ; s'il existe au "
                          "lancement, l'entrainement reprend a l'epoque suivante")
+    ap.add_argument("--stream", default="",
+                    help="lot prepare par tools/prep_lot.py (motif glob) : les fichiers "
+                         "passent sur la carte par groupes, le dernier sert de validation")
+    ap.add_argument("--chunk-files", type=int, default=8,
+                    help="--stream : nombre de fichiers sur la carte a la fois")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if args.gpu_decode:
+    stream_files = []
+    if args.stream:
+        # Lot deja dedoublonne et melange sur disque : rien n'est charge ici,
+        # sauf la validation (le dernier fichier) et un echantillon
+        # d'entrainement pour mesurer l'ecart entre les deux.
+        stream_files = sorted(glob.glob(args.stream))
+        if len(stream_files) < 2:
+            raise SystemExit(f"--stream : il faut au moins 2 fichiers ({args.stream})")
+        val_recs = np.fromfile(stream_files[-1], dtype=np.uint8).reshape(-1, 32)
+        stream_files = stream_files[:-1]
+        n_train = sum(os.path.getsize(f) // 32 for f in stream_files)
+        n_val = len(val_recs)
+        n = n_train + n_val
+        data_val = RawData(val_recs, dev, args.out_buckets, args.lambda_eval)
+        tr_recs = np.fromfile(stream_files[0], dtype=np.uint8,
+                              count=min(n_val, 2_000_000) * 32).reshape(-1, 32)
+        data_trs = RawData(tr_recs, dev, args.out_buckets, args.lambda_eval)
+        del val_recs, tr_recs
+        data = None
+        print(f"flux : {n_train:,} positions d'entrainement en {len(stream_files)} fichiers, "
+              f"{args.chunk_files} a la fois sur la carte ; {n_val:,} de validation", flush=True)
+
+        def load_group(fs):
+            parts = [np.fromfile(f, dtype=np.uint8).reshape(-1, 32) for f in fs]
+            r = np.concatenate(parts) if len(parts) > 1 else parts[0]
+            return RawData(r, dev, args.out_buckets, args.lambda_eval)
+    elif args.gpu_decode:
         recs = read_raw(args.data, args.limit)
         if args.dedup:
             recs = dedup_recs(recs, args.dedup)
@@ -610,8 +641,15 @@ def main():
                     + (1.0 - args.lambda_eval) * t_result)
         data = PreDecoded(t_codes, t_sqs, t_stm, t_obuck, t_score, target)
 
-    n_val = max(2048, int(n * args.val_frac))
-    split = n - n_val
+    if args.stream:
+        split = n_train
+        vdata, voff, tdata = data_val, 0, data_trs
+        n_tr_s = len(data_trs.t)
+    else:
+        n_val = max(2048, int(n * args.val_frac))
+        split = n - n_val
+        vdata, voff, tdata = data, split, data
+        n_tr_s = min(n_val, split)
 
     fmap  = FeatureMap(args.buckets, bool(args.mirror), dev)
     model = Perspective(fmap.n_inputs, args.hidden, args.out_buckets,
@@ -650,7 +688,7 @@ def main():
             fw, fb = fw + (tw_,), fb + (tb_,)
         return fw, fb
 
-    def eval_set(sel, chunk=args.val_chunk):
+    def eval_set(sel, chunk=args.val_chunk, d=None):
         """Perte et erreur en centipions sur un ensemble, par morceaux.
 
         Un passage d'un seul tenant sur les 320 000 positions de validation
@@ -660,10 +698,11 @@ def main():
         Les sommes sont accumulees en Python, donc en double precision : le
         resultat est au moins aussi exact qu'une moyenne unique en float32.
         """
+        d = d if d is not None else data
         s_loss = s_err = 0.0
         for a in range(0, len(sel), chunk):
             sub = sel[a:a + chunk]
-            c, sq, stm_b, ob_b, sc_b, tg_b = data.batch(sub)
+            c, sq, stm_b, ob_b, sc_b, tg_b = d.batch(sub)
             iw, ib = feats(c, sq)
             pred   = model(iw, ib, stm_b, ob_b)
             s_loss += ((torch.sigmoid(pred) - tg_b) ** 2).sum().item()
@@ -691,6 +730,8 @@ def main():
         # Un lot d'entrainement et une mesure de validation, puis arret : on
         # verifie la memoire et la chaine complete sans depenser le quota.
         model.train()
+        if args.stream:
+            data = load_group(stream_files[:args.chunk_files])
         sel = torch.arange(0, min(args.batch, split), device=dev)
         c, sq, stm_b, ob_b, _, tg_b = data.batch(sel)
         iw, ib = feats(c, sq)
@@ -698,7 +739,7 @@ def main():
         opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
         model.eval()
         with torch.no_grad():
-            vl, ce = eval_set(torch.arange(split, min(n, split + 65536), device=dev))
+            vl, ce = eval_set(torch.arange(voff, voff + min(n_val, 65536), device=dev), d=vdata)
         mem = torch.cuda.max_memory_allocated() / 1e9 if dev == "cuda" else 0.0
         print(f"ESSAI A BLANC REUSSI : perte {loss.item():.5f}, validation {ce:.1f} cp, "
               f"memoire GPU max {mem:.2f} Go", flush=True)
@@ -707,35 +748,57 @@ def main():
         model.train()
         # Melange sur le processeur, puis envoi : sur la carte, randperm de 211 M
         # demande 5 a 6 Go de temporaires et a fait deborder une T4 (24-10).
-        order = torch.randperm(split).to(dev)
         tot = 0.0
+        if args.stream:
+            # Groupes de fichiers tires au hasard a chaque epoque ; chaque
+            # fichier est deja un echantillon melange du lot entier.
+            fperm = torch.randperm(len(stream_files)).tolist()
+            groupes = [[stream_files[i] for i in fperm[g:g + args.chunk_files]]
+                       for g in range(0, len(fperm), args.chunk_files)]
+        else:
+            groupes = [None]
+        steps = 0
+        for grp in groupes:
+            if grp is not None:
+                data = None
+                if dev == "cuda":
+                    torch.cuda.empty_cache()
+                data = load_group(grp)
+                m = len(data.t)
+            else:
+                m = split
+            order = torch.randperm(m).to(dev)
+            for k in range((m + args.batch - 1) // args.batch):
+                sel = order[k * args.batch:(k + 1) * args.batch]
+                c, sq, stm_b, ob_b, _, tg_b = data.batch(sel)
+                iw, ib = feats(c, sq)
+                loss = ((torch.sigmoid(model(iw, ib, stm_b, ob_b)) - tg_b) ** 2).mean()
 
-        for k in range(steps):
-            sel = order[k * args.batch:(k + 1) * args.batch]
-            c, sq, stm_b, ob_b, _, tg_b = data.batch(sel)
-            iw, ib = feats(c, sq)
-            loss = ((torch.sigmoid(model(iw, ib, stm_b, ob_b)) - tg_b) ** 2).mean()
-
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            opt.step()
-            model.clip_weights()
-            tot += loss.item()
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+                model.clip_weights()
+                tot += loss.item()
+                steps += 1
+        if args.stream:
+            data = None
+            if dev == "cuda":
+                torch.cuda.empty_cache()
 
         sched.step()
 
         model.eval()
         with torch.no_grad():
-            vsel = torch.arange(split, n, device=dev)
+            vsel = torch.arange(voff, voff + n_val, device=dev)
 
             # Erreur sur un echantillon des donnees D'ENTRAINEMENT : si elle
             # rejoint celle de validation, le reseau ne peut pas representer
             # davantage ; si elle est bien plus basse, c'est la generalisation
             # qui bloque, donc les donnees.
-            tsel = torch.arange(0, min(n_val, split), device=dev)
+            tsel = torch.arange(0, n_tr_s, device=dev)
 
-            vloss, cp_err = eval_set(vsel)
-            _,     tr_err = eval_set(tsel)
+            vloss, cp_err = eval_set(vsel, d=vdata)
+            _,     tr_err = eval_set(tsel, d=tdata)
 
         if cp_err < best[1]:
             best = (vloss, cp_err, epoch)
@@ -771,10 +834,10 @@ def main():
     with torch.no_grad():
         model.eval()
         mx = 0.0
-        vsel = torch.arange(split, min(n, split + 200000), device=dev)
+        vsel = torch.arange(voff, voff + min(n_val, 200000), device=dev)
         for a in range(0, len(vsel), 16384):
             sub = vsel[a:a + 16384]
-            c, sq, *_ = data.batch(sub)
+            c, sq, *_ = vdata.batch(sub)
             iw, ib = feats(c, sq)
             for idx in (iw, ib):
                 acc = model.ft(idx[0]) + model.ft_bias

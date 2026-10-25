@@ -159,6 +159,10 @@ def worker(wid, args, openings, out_path, queue):
 
     with open(out_path, "wb") as f:
         while written < args.positions_per_worker:
+            # Arret propre demande (limite de 12 h sur Kaggle) : on finit
+            # entre deux parties, rien n'est perdu.
+            if args.stop_file and os.path.exists(args.stop_file):
+                break
             start_fen = rng.choice(openings)
             board = chess.Board(start_fen)
 
@@ -310,6 +314,8 @@ def main():
     ap.add_argument("--adj-score", type=int, default=2500)
     ap.add_argument("--adj-plies", type=int, default=6)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--stop-file", default="",
+                    help="fichier dont l'apparition arrete proprement la generation")
     args = ap.parse_args()
 
     args.positions_per_worker = args.positions // args.workers
