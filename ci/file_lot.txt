@@ -17,3 +17,4 @@ ExtNegCut|ExtNegCut=1|0 3|6|1000|10|
 Ldse50vs25|Ldse=50|0 3|6|1000|10|Ldse=25
 Ldse10vs25|Ldse=10|0 3|6|1000|10|Ldse=25
 Combo8|EvalFile=reseau/essais/mat4_tout_dd4.nnue Ldse=25 ExtLimit=1|0 3|10|300|12|EvalFile=reseau/essais/mat4_tout_dd4.nnue|tc:10+0.1
+Auto251|EvalFile=reseau/essais/auto251.nnue|0 5|10|300|12|EvalFile=reseau/essais/mat4_tout_dd4.nnue|tc:10+0.1
