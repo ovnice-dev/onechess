@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -123,7 +124,7 @@ void position(Position& pos, std::istringstream& is, StateListPtr& states) {
         return;
 
     states = StateListPtr(new std::deque<StateInfo>(1));
-    pos.set(fen, false, &states->back());
+    pos.set(fen, bool(Options["UCI_Chess960"]), &states->back());
 
     Move m;
     while (is >> token && (m = UCI::to_move(pos, token)) != Move::none())
@@ -265,9 +266,23 @@ UCI::Option::Option(int v, int minv, int maxv, OnChange f) :
     defaultValue = currentValue = std::to_string(v);
 }
 
+// Entier lu sans exception (le moteur est compile en -fno-exceptions) :
+// std::stoi sur "abc" ou "" terminait le programme.
+static bool parse_int(const std::string& s, int& out) {
+    if (s.empty())
+        return false;
+    char*      end = nullptr;
+    const long v   = std::strtol(s.c_str(), &end, 10);
+    if (end == s.c_str() || *end != 0 || v < INT32_MIN || v > INT32_MAX)
+        return false;
+    out = int(v);
+    return true;
+}
+
 UCI::Option::operator int() const {
     assert(type == "check" || type == "spin");
-    return type == "spin" ? std::stoi(currentValue) : currentValue == "true";
+    int v = 0;
+    return type == "spin" ? (parse_int(currentValue, v) ? v : 0) : currentValue == "true";
 }
 
 UCI::Option::operator std::string() const {
@@ -283,12 +298,17 @@ void UCI::Option::operator<<(const Option& o) {
     idx                            = insertOrder++;
 }
 
+static bool spin_ok(const std::string& v, int lo, int hi) {
+    int x = 0;
+    return parse_int(v, x) && x >= lo && x <= hi;
+}
+
 UCI::Option& UCI::Option::operator=(const std::string& v) {
     assert(!type.empty());
 
     if ((type != "button" && type != "string" && v.empty())
         || (type == "check" && v != "true" && v != "false")
-        || (type == "spin" && (std::stoi(v) < min || std::stoi(v) > max)))
+        || (type == "spin" && !spin_ok(v, min, max)))
         return *this;
 
     if (type != "button")
