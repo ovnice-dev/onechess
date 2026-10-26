@@ -1,20 +1,4 @@
 # File des SPRT en lot (ci/file_lot.sh). Reference : valeurs par defaut,
-# signature 1231513 (reseau mat4 92,5 M + Combo5-6-7, depuis le 24-10) ; phase 8 (options de l'etude des 9 moteurs, 24-10). NE PAS changer les valeurs par defaut tant que la file
+# signature 1019034 (reseau auto251 : Lichess 215,7 M + autojeu SF19 35,7 M, depuis le 26-10). NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
-ExtLimit|ExtLimit=1|0 3|10|300|12||tc:10+0.1
-LmrCorr40|LmrCorr=40|0 3|6|1000|10|
-LmrCheck|LmrCheck=1|0 3|6|1000|10|
-FailHighSoft|FailHighSoft=1|0 3|6|1000|10|
-AlphaDepthRed|AlphaDepthRed=1|0 3|6|1000|10|
-LmrCorr80|LmrCorr=80|0 3|6|1000|10|
-HistBoost80|HistBoost=80|0 3|6|1000|10|
-IirShallow|IirShallow=1|0 3|6|1000|10|
-LmrTtpvFailLow|LmrTtpvFailLow=1|0 3|6|1000|10|
-LmrAlphaRaise|LmrAlphaRaise=1|0 3|6|1000|10|
-Ldse25|Ldse=25|0 3|6|1000|10|
-ExtNegCut|ExtNegCut=1|0 3|6|1000|10|
-Ldse50vs25|Ldse=50|0 3|6|1000|10|Ldse=25
-Ldse10vs25|Ldse=10|0 3|6|1000|10|Ldse=25
-Combo8|EvalFile=reseau/essais/mat4_tout_dd4.nnue Ldse=25 ExtLimit=1|0 3|10|300|12|EvalFile=reseau/essais/mat4_tout_dd4.nnue|tc:10+0.1
-Auto251|EvalFile=reseau/essais/auto251.nnue|0 5|10|300|12|EvalFile=reseau/essais/mat4_tout_dd4.nnue|tc:10+0.1
