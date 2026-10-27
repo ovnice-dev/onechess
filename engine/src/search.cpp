@@ -495,6 +495,12 @@ void Thread::iterative_deepening() {
         if (!Threads.stop)
             completedDepth = rootDepth;
 
+        // "go mate N" : on s'arrete des qu'un mat en N coups au plus est prouve
+        if (Limits.mate && is_main() && !Threads.stop
+            && rootMoves[0].score >= VALUE_MATE_IN_MAX_PLY
+            && VALUE_MATE - rootMoves[0].score <= 2 * Limits.mate)
+            Threads.stop = true;
+
         if (rootMoves[0].pv[0] != lastBestMove)
         {
             lastBestMove  = rootMoves[0].pv[0];
