@@ -144,7 +144,8 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     // 1. Placement des pieces
     while ((ss >> token) && !isspace(token))
     {
-        if (isdigit(token))
+        // Un FEN malforme ne doit jamais faire ecrire hors de l'echiquier
+        if (token >= '1' && token <= '8')
             sq += (token - '0') * EAST;
 
         else if (token == '/')
@@ -152,7 +153,8 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
         else if ((idx = PieceToChar.find(char(token))) != string::npos)
         {
-            put_piece(Piece(idx), sq);
+            if (is_ok(sq) && piece_on(sq) == NO_PIECE)
+                put_piece(Piece(idx), sq);
             ++sq;
         }
     }
@@ -171,16 +173,33 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
         token = char(toupper(token));
 
+        // Un droit de roque n'est retenu que si le roi et la tour sont bien
+        // sur la premiere rangee : sinon la recherche de la tour sortait de
+        // l'echiquier (FEN malforme).
+        const Square base = relative_square(c, SQ_A1);
+        if (!(pieces(c, KING) & rank_bb(rank_of(base))))
+            continue;
+
+        bool trouvee = false;
         if (token == 'K')
-            for (rsq = relative_square(c, SQ_H1); piece_on(rsq) != rook; --rsq) {}
-
+        {
+            for (int f = FILE_H; f >= FILE_A && !trouvee; --f)
+                if (piece_on(rsq = make_square(File(f), rank_of(base))) == rook)
+                    trouvee = true;
+        }
         else if (token == 'Q')
-            for (rsq = relative_square(c, SQ_A1); piece_on(rsq) != rook; ++rsq) {}
-
+        {
+            for (int f = FILE_A; f <= FILE_H && !trouvee; ++f)
+                if (piece_on(rsq = make_square(File(f), rank_of(base))) == rook)
+                    trouvee = true;
+        }
         else if (token >= 'A' && token <= 'H')
-            rsq = make_square(File(token - 'A'), relative_rank(c, RANK_1));
+        {
+            rsq     = make_square(File(token - 'A'), rank_of(base));
+            trouvee = piece_on(rsq) == rook;
+        }
 
-        else
+        if (!trouvee)
             continue;
 
         set_castling_right(c, rsq);

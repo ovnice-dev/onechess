@@ -31,7 +31,8 @@ TUNABLE_LIST(TUNABLE_DEFINE)
 }
 
 namespace Search {
-LimitsType Limits;
+LimitsType        Limits;
+std::atomic<bool> Ponder{false}, StopOnPonderhit{false};
 }
 
 using namespace Search;
@@ -323,6 +324,10 @@ void update_correction_history(const Position& pos, Stack* ss, Thread* th, int b
 }
 
 void check_time() {
+    // Pendant le ponder, le temps qui passe est celui de l'adversaire
+    if (Ponder)
+        return;
+
     if (!Limits.use_time_management() && !Limits.movetime && !Limits.nodes)
         return;
 
@@ -561,8 +566,13 @@ void Thread::iterative_deepening() {
 
             if (forced || Time.elapsed() > TimePoint(budget))
             {
-                Threads.stop = true;
-                break;
+                if (Ponder)
+                    StopOnPonderhit = true;   // on continue, on jouera au ponderhit
+                else
+                {
+                    Threads.stop = true;
+                    break;
+                }
             }
         }
 
@@ -579,7 +589,7 @@ void Thread::iterative_deepening() {
     // "go infinite" impose de ne rendre le coup qu'apres un "stop" explicite.
     // C'est pour cela que la boucle UCI ne doit surtout pas attendre ici :
     // sinon elle ne lirait jamais ce "stop".
-    while (!Threads.stop && Limits.infinite)
+    while (!Threads.stop && (Limits.infinite || Ponder))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     Threads.stop = true;

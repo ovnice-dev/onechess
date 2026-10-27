@@ -75,9 +75,14 @@ struct LimitsType {
     int               movestogo, depth, mate, perft, infinite;
     std::uint64_t     nodes;
     bool              silent = false;   // le banc n'annonce pas de coup
+    bool              ponderMode = false;  // "go ... ponder"
 };
 
 extern LimitsType Limits;
+
+// Ponder : pendant "go ponder", la recherche ne s'arrete jamais d'elle-meme ;
+// une decision d'arret prise pendant ce temps est remise au "ponderhit".
+extern std::atomic<bool> Ponder, StopOnPonderhit;
 
 void init();
 

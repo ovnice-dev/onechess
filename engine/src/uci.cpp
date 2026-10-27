@@ -91,6 +91,8 @@ Search::LimitsType parse_go(Position& pos, std::istringstream& is) {
             is >> limits.perft;
         else if (token == "infinite")
             limits.infinite = 1;
+        else if (token == "ponder")
+            limits.ponderMode = true;
 
     return limits;
 }
@@ -104,7 +106,45 @@ void go(Position& pos, std::istringstream& is, StateListPtr& states) {
     // On lance et on rend la main : la boucle UCI doit rester capable de lire
     // "stop" pendant que la recherche tourne. C'est le thread principal de
     // recherche qui affichera le coup.
+    Search::Ponder          = limits.ponderMode;
+    Search::StopOnPonderhit = false;
     Threads.start_thinking(pos, states, limits);
+}
+
+// Placement des pieces d'un FEN : 8 rangees de 8 cases, un roi par couleur,
+// pas de pion sur les rangees 1 et 8. Verifie AVANT Position::set, qui
+// suppose un roi de chaque couleur et plantait sinon.
+bool fen_ok(const std::string& fen) {
+    std::istringstream ss(fen);
+    std::string        board, side;
+    ss >> board >> side;
+    if (side != "w" && side != "b")
+        return false;
+    int rank = 0, files = 0, wk = 0, bk = 0;
+    for (char c : board)
+    {
+        if (c == '/')
+        {
+            if (files != 8 || ++rank > 7)
+                return false;
+            files = 0;
+        }
+        else if (c >= '1' && c <= '8')
+            files += c - '0';
+        else if (std::string("PNBRQKpnbrqk").find(c) != std::string::npos)
+        {
+            if ((c == 'P' || c == 'p') && (rank == 0 || rank == 7))
+                return false;
+            wk += c == 'K';
+            bk += c == 'k';
+            ++files;
+        }
+        else
+            return false;
+        if (files > 8)
+            return false;
+    }
+    return rank == 7 && files == 8 && wk == 1 && bk == 1;
 }
 
 void position(Position& pos, std::istringstream& is, StateListPtr& states) {
@@ -123,8 +163,24 @@ void position(Position& pos, std::istringstream& is, StateListPtr& states) {
     else
         return;
 
+    if (!fen_ok(fen))
+    {
+        std::cout << "info string FEN invalide, position initiale : " << fen << std::endl;
+        fen = StartFEN;
+        while (is >> token) {}   // les coups ne s'appliquent plus
+    }
+
     states = StateListPtr(new std::deque<StateInfo>(1));
     pos.set(fen, bool(Options["UCI_Chess960"]), &states->back());
+
+    // Le camp qui n'a pas le trait ne peut pas etre en echec
+    if (pos.attackers_to(pos.square<KING>(~pos.side_to_move())) & pos.pieces(pos.side_to_move()))
+    {
+        std::cout << "info string FEN invalide (roi adverse en echec), position initiale" << std::endl;
+        states = StateListPtr(new std::deque<StateInfo>(1));
+        pos.set(StartFEN, bool(Options["UCI_Chess960"]), &states->back());
+        return;
+    }
 
     Move m;
     while (is >> token && (m = UCI::to_move(pos, token)) != Move::none())
@@ -458,7 +514,7 @@ void UCI::loop(int argc, char* argv[]) {
         // une recherche infinie doit etre interrompue, elle ne finirait pas.
         else if (token == "fin")
         {
-            if (Search::Limits.infinite)
+            if (Search::Limits.infinite || Search::Ponder)
                 Threads.stop = true;
             Threads.wait_for_search_finished();
             break;
@@ -496,8 +552,14 @@ void UCI::loop(int argc, char* argv[]) {
         else if (token == "isready")
             std::cout << "readyok" << std::endl;
 
+        // Le coup prevu a ete joue : la recherche continue, en temps normal.
+        // Si elle avait deja decide de s'arreter, elle joue maintenant.
         else if (token == "ponderhit")
-            Search::Limits.infinite = 0;
+        {
+            Search::Ponder = false;
+            if (Search::StopOnPonderhit)
+                Threads.stop = true;
+        }
 
         else if (token == "position")
             position(pos, is, states);
