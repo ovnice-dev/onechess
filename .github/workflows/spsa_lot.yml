@@ -1,0 +1,59 @@
+name: SPSA en lot
+run-name: ${{ inputs.nom }} (${{ inputs.morceaux }} machines, ${{ inputs.iters }} paires)
+
+# SPSA independants sur plusieurs machines, une graine chacun ; le PC fait la
+# moyenne des resultats (ci/spsa_moy.py), puis un SPRT valide la moyenne.
+on:
+  workflow_dispatch:
+    inputs:
+      nom:
+        required: true
+      params:
+        description: "fichier des constantes (nom,min,max,depart ...)"
+        required: true
+        default: "ci/spsa6_params.txt"
+      iters:
+        required: false
+        default: "1900"
+      morceaux:
+        required: false
+        default: "20"
+      graine:
+        required: false
+        default: "100"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      liste: ${{ steps.l.outputs.liste }}
+    steps:
+      - id: l
+        run: echo "liste=[$(seq -s, 1 ${{ inputs.morceaux }})]" >> "$GITHUB_OUTPUT"
+
+  morceau:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        m: ${{ fromJSON(needs.plan.outputs.liste) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install chess
+      - name: spsa
+        env:
+          PARAMS: ${{ inputs.params }}
+          ITERS: ${{ inputs.iters }}
+          GRAINE: ${{ inputs.graine }}
+          MORCEAU: ${{ matrix.m }}
+        run: bash ci/spsa_ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spsa-${{ inputs.nom }}-m${{ matrix.m }}
+          path: ci_out/
