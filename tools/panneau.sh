@@ -12,7 +12,11 @@ nuage() {   # Kaggle + GitHub -> fichiers du cache
   {
     for d in _kaggle/onechess-*/; do
       k=$(basename "$d"); [ -f "$d/kernel-metadata.json" ] || continue
-      if [ -f "$C/klog/$k.fini" ]; then cat "$C/klog/$k.fini"; continue; fi
+      # termine et rien pousse depuis : cache ; sinon (relance) on reinterroge
+      if [ -f "$C/klog/$k.fini" ] && [ -z "$(find "$d" -type f -newer "$C/klog/$k.fini" | head -1)" ]; then
+        cat "$C/klog/$k.fini"; continue
+      fi
+      rm -f "$C/klog/$k.fini"
       st=$("$K" kernels status "ovnice/$k" 2>&1 | grep -oE 'KernelWorkerStatus.[A-Z_]*' | sed 's/KernelWorkerStatus.//')
       last=""
       if [ "$st" != RUNNING ] && [ "$st" != QUEUED ]; then
@@ -24,9 +28,15 @@ nuage() {   # Kaggle + GitHub -> fichiers du cache
     done
   } > "$C/kaggle.tmp" 2>/dev/null && mv "$C/kaggle.tmp" "$C/kaggle.txt"
   { for r in onechess onechess-prive; do
-      "$G" run list -R ovnice-dev/$r --limit 6 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
+      "$G" run list -R ovnice-dev/$r --limit 12 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
          -q '.[] | "\(.createdAt)|\(.databaseId)|\(.displayTitle)|\(.status)|\(.conclusion)|\(.createdAt)|\(.updatedAt)"'
-    done | sort -r | cut -d'|' -f2- | head -8; } > "$C/gh.tmp" 2>/dev/null && mv "$C/gh.tmp" "$C/gh.txt"
+    done | sort -r | cut -d'|' -f2- | head -16; } > "$C/gh.tmp" 2>/dev/null && mv "$C/gh.tmp" "$C/gh.txt"
+  # avancement par machine des runs en cours (SPSA, lots)
+  grep -vE '\|completed\|' "$C/gh.txt" | cut -d'|' -f1 | while read -r id; do
+    for r in onechess onechess-prive; do
+      "$G" run view "$id" -R ovnice-dev/$r --json jobs         -q '"\([.jobs[]|select(.status=="completed")]|length)/\(.jobs|length) machines finies"' 2>/dev/null && break
+    done > "$C/jobs_$id.txt"
+  done
   date +%s > "$C/nuage.date"
 }
 
@@ -64,16 +74,22 @@ entrainements() {
   [ $vu = 0 ] && echo "  ${Gr}aucun entrainement actif${Z}"
 }
 
+millions() { awk -v n="$1" 'BEGIN{printf "%.1f M", n/1e6}'; }
+compte() { find "$@" -maxdepth 1 -name '*.bin' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END {printf "%d", s/32}'; }
+
 donnees() {
-  echo "${B}== DONNEES (PC) ==${Z}"
-  local pos=$(find data/nnue_elite -name '*.bin' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END {printf "%d", s/32}')
-  printf "  lot etiquete : ${B}%s${Z} positions   %s cible 250 M\n" "$(echo "$pos" | sed -E ':a;s/([0-9])([0-9]{3})($| )/\1 \2\3/;ta')" "$(barre "$((pos/1000000))" 250 25)"
-  local a=$(( $(date +%s) - $(stat -c %Y data/elite_campaign.log) ))
-  echo "  campagne   : $(grep -vE '^###' data/elite_campaign.log | grep -E 'fait|ARRET|etiquet|positions' | tail -1 | cut -c1-110)"
-  echo "  conversion : $(tail -1 data/elite_conversion.log | cut -c1-110)"
-  echo "  ${Gr}(journaux ecrits a la fin de chaque fichier ; derniere ecriture il y a $((a/60)) min)${Z}"
-  local cv=$(tasklist 2>/dev/null | grep -ciE 'python|pgn-extract|stockfish')
-  echo "  processus python/stockfish actifs : $cv"
+  echo "${B}== DONNEES POUR LE PROCHAIN RESEAU ==${Z}"
+  local li=$(compte data/nnue_elite/*/ data/nnue_elite) ak=$(compte data/autojeu) ap=$(compte data/autojeu_pc)
+  local tot=$((li + ak + ap))
+  printf "  Lichess etiquete   %10s\n" "$(millions $li)"
+  printf "  autojeu Kaggle     %10s   ${Gr}(recupere dans data/autojeu)${Z}\n" "$(millions $ak)"
+  printf "  autojeu PC         %10s   " "$(millions $ap)"
+  local tr=$(tasklist 2>/dev/null | grep -ci stockfish)
+  if [ "$tr" -gt 0 ] && [ ! -f data/autojeu_pc/STOP ]; then
+    local l=$(grep -E 'positions +[0-9]+/s' data/autojeu_pc/log.txt 2>/dev/null | tail -1 | grep -oE '[0-9]+/s')
+    echo "${V}EN COURS${Z} $tr stockfish, ${B}${l:-?}${Z}"
+  else echo "${Gr}arrete${Z}"; fi
+  printf "  total (avant doublons) ${B}%s${Z}   %s cible 500 M\n" "$(millions $tot)" "$(barre $((tot/1000000)) 500 25)"
 }
 
 matchs_locaux() {
@@ -90,8 +106,10 @@ matchs_locaux() {
 kaggle() {
   echo "${B}== KAGGLE ==${Z}"
   [ -f "$C/kaggle.txt" ] || { echo "  ${Gr}premiere interrogation en cours...${Z}"; return; }
-  # en cours d'abord, puis les 5 derniers termines
-  { grep -E '\|(RUNNING|QUEUED)\|' "$C/kaggle.txt"; grep -vE '\|(RUNNING|QUEUED)\|' "$C/kaggle.txt" | tail -5; } |
+  # en cours d'abord, puis les termines depuis moins de 48 h
+  { grep -E '\|(RUNNING|QUEUED)\|' "$C/kaggle.txt"
+    grep -vE '\|(RUNNING|QUEUED)\|' "$C/kaggle.txt" | while IFS= read -r x; do
+      [ -n "$(find "$C/klog/${x%%|*}.fini" -mmin -2880 2>/dev/null)" ] && echo "$x"; done; } |
   while IFS='|' read -r k st last; do
     case "$st" in RUNNING) c=$J; last="(journal lisible a la fin)";; QUEUED) c=$J;; COMPLETE) c=$V;; *) c=$R;; esac
     printf "  %-28s ${c}%-10s${Z} %s\n" "$k" "$st" "$(echo "$last" | cut -c1-90)"
@@ -110,9 +128,9 @@ github() {
       printf "  %-12s %-16s ${V}%-9s${Z} %3d min  %s\n" "$id" "$(echo "$nom" | cut -c1-16)" "$concl" $((dur/60)) "$v"
     else
       dur=$(( $(date +%s) - deb ))
-      printf "  %-12s %-16s ${J}%-9s${Z} %s %d/360 min\n" "$id" "$(echo "$nom" | cut -c1-16)" "$st" "$(barre $((dur/60)) 360 20)" $((dur/60))
+      printf "  %-12s %-16s ${J}%-9s${Z} %s %d/360 min  %s\n" "$id" "$(echo "$nom" | cut -c1-16)" "$st" "$(barre $((dur/60)) 360 20)" $((dur/60)) "$(cat "$C/jobs_$id.txt" 2>/dev/null)"
     fi
-  done < <(head -8 "$C/gh.txt")
+  done < <(grep -v '|Lancement Kaggle' "$C/gh.txt" | head -6)
   # SPRT en lot : bilan cumule de chaque test (ci/sprt_lot.sh)
   for f in $(ls -t ci_resultats/lot/*.log 2>/dev/null | head -6); do
     [ $(( $(date +%s) - $(stat -c %Y "$f") )) -gt 86400 ] && continue
@@ -135,7 +153,7 @@ while true; do
     donnees; echo
     kaggle; echo
     github; echo
-    echo "${Gr}Ctrl-C pour quitter.  Lot de reference installe : bench 12 = $(cat ci/signature.txt 2>/dev/null)${Z}"
+    echo "${Gr}Ctrl-C pour quitter.  Reference : reseau $(cat reseau/NOM.txt 2>/dev/null || echo auto251), signature $(cat ci/signature.txt 2>/dev/null)${Z}"
   } 2>/dev/null )
   clear; printf "%s\n" "$sortie"
   sleep 15

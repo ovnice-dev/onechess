@@ -2,3 +2,5 @@
 # signature 1019034 (reseau auto251 : Lichess 215,7 M + autojeu SF19 35,7 M, depuis le 26-10). NE PAS changer les valeurs par defaut tant que la file
 # tourne : les vagues suivantes testeraient contre une autre reference.
 # Nom|options du candidat|bornes|morceaux|parties|vagues max|options reference
+Spsa6N|LmrBase=55 LmrDivisor=267 LmrHistDiv=13230 NmpEvalDiv=224 FutilityMargin=100 HistPruneMargin=3356 SeeCaptureMargin=124 SeeQuietMargin=14 ProbcutMargin=175 SingularBetaFactor=24 SingularExtraMargin=17 StatBonusMul=256 StatBonusMax=1829 StatMalusMul=502 StatMalusMax=1902 QsFutilityMargin=109 QsDeltaMargin=139 RazorMargin=288 AspirationDelta=11 CorrHistDiv=10824 MalusDecay=926 ThreatOrder=48|0 3|6|1000|10|
+Spsa6T|LmrBase=55 LmrDivisor=267 LmrHistDiv=13230 NmpEvalDiv=224 FutilityMargin=100 HistPruneMargin=3356 SeeCaptureMargin=124 SeeQuietMargin=14 ProbcutMargin=175 SingularBetaFactor=24 SingularExtraMargin=17 StatBonusMul=256 StatBonusMax=1829 StatMalusMul=502 StatMalusMax=1902 QsFutilityMargin=109 QsDeltaMargin=139 RazorMargin=288 AspirationDelta=11 CorrHistDiv=10824 MalusDecay=926 ThreatOrder=48|0 3|10|300|12||tc:10+0.1
