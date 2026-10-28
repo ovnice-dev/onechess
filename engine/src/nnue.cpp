@@ -6,6 +6,14 @@
 #include <cassert>
 #include <cstring>
 #include <fstream>
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #include <windows.h>
+#else
+    #include <unistd.h>
+#endif
 #include <sstream>
 
 #include "bitboard.h"
@@ -486,8 +494,27 @@ int feature_index(Color p, Piece pc, Square s, const PerspInfo& pi) {
     return pi.bucket * BASE_INPUTS + pieceIdx * 64 + rel;
 }
 
+// Dossier de l'executable, pour trouver le reseau quand l'interface lance le
+// moteur depuis un autre dossier courant (En Croissant, Arena...).
+static std::string exe_dir() {
+#ifdef _WIN32
+    char buf[1024];
+    DWORD n = GetModuleFileNameA(nullptr, buf, sizeof(buf));
+    std::string p(buf, n < sizeof(buf) ? n : 0);
+#else
+    char buf[1024];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    std::string p(buf, n > 0 ? std::size_t(n) : 0);
+#endif
+    std::size_t k = p.find_last_of("/\\");
+    return k == std::string::npos ? std::string() : p.substr(0, k + 1);
+}
+
 bool load(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
+    // chemin relatif introuvable dans le dossier courant : a cote de l'executable
+    if (!f && !path.empty() && path[0] != '/' && path[0] != char(92) && path.find(':') == std::string::npos)
+        f.open(exe_dir() + path, std::ios::binary);
     if (!f)
         return false;
 

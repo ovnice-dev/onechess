@@ -112,7 +112,10 @@ def main():
     def csv_of(p):
         return os.path.join(args.out, os.path.splitext(os.path.basename(p))[0] + ".csv")
 
-    todo = [p for p in files if not os.path.exists(csv_of(p))]
+    # un mois deja etiquete (.fait) n'est pas reconverti : son CSV peut avoir ete
+    # supprime pour la place, les positions etiquetees sont dans data/nnue_elite
+    todo = [p for p in files if not os.path.exists(csv_of(p))
+            and not os.path.exists(csv_of(p)[:-4] + ".fait")]
     print(f"{len(files)} fichiers, {len(files) - len(todo)} deja convertis, {len(todo)} a faire   "
           f"{args.per_game} positions max par partie   {args.workers} travailleurs", flush=True)
 
