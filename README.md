@@ -10,10 +10,11 @@ de ce dépôt et le dépôt d'archive privé en gardent la trace datée.
 
 - recherche alpha-bêta (PVS) avec table de transposition, LMR, coup nul,
   historiques de continuation et de menaces, corrections d'évaluation ;
-- réseau NNUE 768 → 512×2 → 4 sorties, entraîné sur des parties Lichess Elite
-  étiquetées ;
+- réseau NNUE 768 → 512×2 → 4 sorties (4 experts selon le matériel), entraîné
+  sur des parties Lichess Elite étiquetées et sur de l'autojeu Stockfish 19 ;
 - tables de finales Syzygy (via Fathom) ;
 - gestion du temps par effort en nœuds ;
+- UCI : ponder, Chess960, `go mate`, Syzygy ;
 - chaque changement est validé par SPRT pentanomial (ouvertures UHO).
 
 ## Compiler
@@ -22,6 +23,13 @@ de ce dépôt et le dépôt d'archive privé en gardent la trace datée.
 cd engine
 bash build.sh
 ```
+
+## Utiliser
+
+Placer `onechess.exe` et `onechess.nnue` dans le même dossier, puis ajouter
+`onechess.exe` comme moteur UCI dans l'interface (En Croissant, Arena, Cute
+Chess…). Le réseau est cherché à côté de l'exécutable ; sans lui, le moteur
+joue avec une évaluation simple, beaucoup plus faible.
 
 ## Licence
 
