@@ -1,0 +1,41 @@
+name: Profil
+run-name: Profil (bench ${{ inputs.profondeur }})
+
+# Profil du moteur sous Linux : ou part le temps (reseau, generation, tri,
+# table...). Les pourcentages restent justes sur une machine partagee.
+on:
+  workflow_dispatch:
+    inputs:
+      profondeur:
+        description: "profondeur du bench"
+        default: "13"
+
+jobs:
+  profil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: compilation
+        run: |
+          PEXT=""; grep -q ' bmi2 ' /proc/cpuinfo && PEXT="-DUSE_PEXT"
+          grep -m1 "model name" /proc/cpuinfo
+          g++ -std=c++20 -O3 -DNDEBUG -g -fno-omit-frame-pointer -fno-exceptions -march=native $PEXT -pthread \
+              -Iengine/fathom engine/src/*.cpp engine/fathom/tbprobe.c -o onechess
+      - name: perf
+        run: |
+          mkdir -p ci_out
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-$(uname -r) || sudo apt-get install -y -qq linux-tools-azure linux-tools-generic || true
+          sudo sysctl -w kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
+          printf 'setoption name EvalFile value reseau/onechess.nnue\nbench %s\nquit\n' "${{ inputs.profondeur }}" > entree.txt
+          ./onechess < entree.txt | tail -5 | tee ci_out/bench.txt
+          perf record -F 1999 -g -o perf.data -- ./onechess < entree.txt > /dev/null
+          perf report -i perf.data --stdio --no-children --sort symbol --percent-limit 0.3 -g none > ci_out/profil_plat.txt
+          perf report -i perf.data --stdio --children --sort symbol --percent-limit 2 -g none > ci_out/profil_cumul.txt
+          head -60 ci_out/profil_plat.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profil
+          path: ci_out/
