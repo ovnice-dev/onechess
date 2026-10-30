@@ -293,10 +293,8 @@ def main():
     winjob.install()
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--engine", default=os.path.expandvars(r"%APPDATA%")
-                                        + r""
-                                        r"\org.encroissant.app\engines\stockfish"
-                                        r"\stockfish-windows-x86-64-avx2.exe")
+    ap.add_argument("--engine", default=r"C:\Onechess\engines\sf19\win\stockfish"
+                                        r"\stockfish-windows-x86-64-universal.exe")
     ap.add_argument("--openings", default=r"C:\Onechess\data\openings.epd")
     ap.add_argument("--out", default=r"C:\Onechess\data\nnue")
     ap.add_argument("--positions", type=int, default=20_000_000)

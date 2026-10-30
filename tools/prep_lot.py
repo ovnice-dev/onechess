@@ -14,6 +14,12 @@ fois pour toutes, sur disque :
      est un melange uniforme, en lectures et ecritures sequentielles, sans
      jamais plus d'un fichier de sortie en memoire.
 
+--marque MOTIF (repetable) : les positions des fichiers qui y correspondent
+recoivent 1 dans l'octet 29 (premier octet de bourrage, toujours nul dans nos
+donnees). train.py --lambda-auto applique alors une autre cible a ces
+positions (l'autojeu, dont les resultats sont fiables, contrairement aux
+parties humaines de Lichess). Les fichiers sources ne sont jamais modifies.
+
 Chaque fichier de sortie est donc un echantillon au hasard du lot entier :
 train.py --stream en charge quelques-uns a la fois sur la carte, et garde le
 dernier pour la validation.
@@ -65,6 +71,8 @@ def main():
     ap.add_argument("--files", type=int, default=64)
     ap.add_argument("--dedup", type=int, default=4, help="0 = garder tout")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--marque", action="append", default=[],
+                    help="motif glob : ces fichiers recoivent 1 dans l'octet 29")
     ap.add_argument("--tranche", type=int, default=1 << 22,
                     help="positions lues a la fois")
     args = ap.parse_args()
@@ -74,6 +82,9 @@ def main():
     tailles = [os.path.getsize(f) // RECORD for f in files]
     n = sum(tailles)
     print(f"{n:,} positions dans {len(files)} fichiers", flush=True)
+    marques = set(lister(args.marque)) if args.marque else set()
+    if marques:
+        print(f"{len(marques & set(files))} fichiers marques (octet 29 = 1)", flush=True)
 
     # ---------------------------------------------------- 1. doublons
     garde = np.ones(n, dtype=bool)
@@ -119,6 +130,9 @@ def main():
             r = np.asarray(mm[a:a + args.tranche])
             r = r[garde[pos:pos + len(r)]]
             pos += min(args.tranche, k - a)
+            if f in marques:
+                assert not r[:, 29].any(), f"octet 29 deja utilise : {f}"
+                r[:, 29] = 1
             dest = rng.integers(0, args.files, size=len(r))
             idx = np.argsort(dest, kind="stable")
             r, dest = r[idx], dest[idx]
@@ -140,6 +154,9 @@ def main():
         r.tofile(nm)
         total += len(r)
     assert total == g, (total, g)
+    if marques:
+        nm_ = sum(int(np.fromfile(nm, dtype=np.uint8).reshape(-1, RECORD)[:, 29].sum()) for nm in noms)
+        print(f"positions marquees : {nm_:,} sur {total:,}", flush=True)
     print(f"termine : {total:,} positions, {args.files} fichiers de ~{total // args.files:,}, "
           f"{total * RECORD / 1e9:.2f} Go  ({time.time() - t0:.0f} s)", flush=True)
 

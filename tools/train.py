@@ -237,10 +237,11 @@ class RawData:
     passe avant/arriere -- et il supprime le fichier de cache .npz.
     """
 
-    def __init__(self, recs, device, out_buckets, lambda_eval):
+    def __init__(self, recs, device, out_buckets, lambda_eval, lambda_auto=None):
         self.t    = torch.from_numpy(recs).to(device)
         self.ob_n = out_buckets
         self.lam  = lambda_eval
+        self.lam_auto = lambda_auto     # positions marquees (octet 29 = 1)
         self.bit8 = torch.arange(8, device=device)
         self.k32  = torch.arange(32, device=device)
 
@@ -271,7 +272,10 @@ class RawData:
         sign = 1.0 - 2.0 * stm.float()
         sc   = sc * sign
         res  = torch.where(stm == 0, res, 1.0 - res)
-        tg   = self.lam * torch.sigmoid(sc / SCALE) + (1.0 - self.lam) * res
+        lam  = self.lam
+        if self.lam_auto is not None:
+            lam = torch.where(r[:, 29] == 1, self.lam_auto, self.lam)
+        tg   = lam * torch.sigmoid(sc / SCALE) + (1.0 - lam) * res
 
         ob = torch.clamp(output_bucket(counts.squeeze(1), self.ob_n),
                          max=self.ob_n - 1)
@@ -538,6 +542,11 @@ def main():
     ap.add_argument("--batch", type=int, default=16384)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--lambda-eval", type=float, default=1.0)
+    ap.add_argument("--lambda-auto", type=float, default=None,
+                    help="lambda des positions marquees par prep_lot --marque "
+                         "(autojeu) ; les autres gardent --lambda-eval. Le "
+                         "meilleur reseau est alors choisi sur la perte de "
+                         "validation, et non sur l'erreur en cp")
     ap.add_argument("--val-frac", type=float, default=0.02)
     ap.add_argument("--val-chunk", type=int, default=65536,
                     help="taille des morceaux de validation (le resultat ne "
@@ -568,6 +577,8 @@ def main():
                     help="--stream : nombre de fichiers sur la carte a la fois")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    if args.lambda_auto is not None and not (args.stream or args.gpu_decode):
+        raise SystemExit("--lambda-auto exige le decodage sur GPU (--gpu-decode 1) ou --stream")
 
     torch.manual_seed(args.seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -585,10 +596,10 @@ def main():
         n_train = sum(os.path.getsize(f) // 32 for f in stream_files)
         n_val = len(val_recs)
         n = n_train + n_val
-        data_val = RawData(val_recs, dev, args.out_buckets, args.lambda_eval)
+        data_val = RawData(val_recs, dev, args.out_buckets, args.lambda_eval, args.lambda_auto)
         tr_recs = np.fromfile(stream_files[0], dtype=np.uint8,
                               count=min(n_val, 2_000_000) * 32).reshape(-1, 32)
-        data_trs = RawData(tr_recs, dev, args.out_buckets, args.lambda_eval)
+        data_trs = RawData(tr_recs, dev, args.out_buckets, args.lambda_eval, args.lambda_auto)
         del val_recs, tr_recs
         data = None
         print(f"flux : {n_train:,} positions d'entrainement en {len(stream_files)} fichiers, "
@@ -597,7 +608,7 @@ def main():
         def load_group(fs):
             parts = [np.fromfile(f, dtype=np.uint8).reshape(-1, 32) for f in fs]
             r = np.concatenate(parts) if len(parts) > 1 else parts[0]
-            return RawData(r, dev, args.out_buckets, args.lambda_eval)
+            return RawData(r, dev, args.out_buckets, args.lambda_eval, args.lambda_auto)
     elif args.gpu_decode:
         recs = read_raw(args.data, args.limit)
         if args.dedup:
@@ -606,7 +617,7 @@ def main():
             recs = recs[:args.use]
         n    = len(recs)
         recs = recs[np.random.default_rng(args.seed).permutation(n)]
-        data = RawData(recs, dev, args.out_buckets, args.lambda_eval)
+        data = RawData(recs, dev, args.out_buckets, args.lambda_eval, args.lambda_auto)
         print(f"decodage par lot : {n * 32 / 1e9:.2f} Go sur la carte")
     else:
         codes, sqs, score, stm, result = decode_shards(args.data, args.limit, args.cache)
@@ -800,7 +811,8 @@ def main():
             vloss, cp_err = eval_set(vsel, d=vdata)
             _,     tr_err = eval_set(tsel, d=tdata)
 
-        if cp_err < best[1]:
+        mixte = args.lambda_auto is not None or args.lambda_eval < 1.0
+        if (vloss < best[0]) if mixte else (cp_err < best[1]):
             best = (vloss, cp_err, epoch)
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
