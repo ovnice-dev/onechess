@@ -51,6 +51,20 @@ BUCKET_LAYOUTS = {
         7, 7, 7, 7, 7, 7, 7, 7,
     ],
 
+    # Seize zones, celles de Stormphrax et d'Alexandria (avec --mirror 1) :
+    # une par case sur les deux premieres rangees, puis de plus en plus
+    # grossieres a mesure que le roi s'avance.
+    "k16": [
+         0,  1,  2,  3,  3,  2,  1,  0,
+         4,  5,  6,  7,  7,  6,  5,  4,
+         8,  9, 10, 11, 11, 10,  9,  8,
+         8,  9, 10, 11, 11, 10,  9,  8,
+        12, 12, 13, 13, 13, 13, 12, 12,
+        12, 12, 13, 13, 13, 13, 12, 12,
+        14, 14, 15, 15, 15, 15, 14, 14,
+        14, 14, 15, 15, 15, 15, 14, 14,
+    ],
+
     # Une entree par case de roi : le maximum d'information, au prix d'un
     # reseau bien plus gros et donc bien plus gourmand en donnees.
     "k32": list(range(64)),

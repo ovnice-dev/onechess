@@ -27,11 +27,13 @@ GROUPES = {
 
 def lire_cles(motifs):
     fs = sorted({f for m in motifs for f in glob.glob(os.path.join(RACINE, m), recursive=True)})
-    n = sum(os.path.getsize(f) // RECORD for f in fs)
+    # tailles lues une seule fois : un fichier d'autojeu en cours d'ecriture
+    # grandit pendant la lecture
+    tailles = [os.path.getsize(f) // RECORD for f in fs]
+    n = sum(tailles)
     k = np.empty(n, dtype=np.uint64)
     p = 0
-    for f in fs:
-        m = os.path.getsize(f) // RECORD
+    for f, m in zip(fs, tailles):
         mm = np.memmap(f, dtype=np.uint8, mode="r", shape=(m, RECORD))
         for a in range(0, m, 1 << 22):
             r = np.asarray(mm[a:a + (1 << 22)])

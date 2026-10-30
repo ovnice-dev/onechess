@@ -55,7 +55,7 @@ FENS = [
     "r4rk1/pppq1ppp/2n1bn2/3p4/3P4/2N1BN2/PPPQ1PPP/R4RK1 w - - 0 1",
     "2kr3r/pppq1ppp/2n1bn2/3p4/3P4/2N1BN2/PPPQ1PPP/2KR3R b - - 0 1",
     "8/8/4k3/8/8/3K4/8/8 w - - 0 1",
-    "8/8/8/8/8/8/6k1/6K1 b - - 0 1",
+    "8/8/8/8/8/6k1/8/6K1 b - - 0 1",
 ]
 
 

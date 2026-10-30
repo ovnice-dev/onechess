@@ -1,0 +1,20 @@
+{
+ "id": "ovnice/onechess-1-16-lambda-2",
+ "title": "onechess-1-16-lambda-2",
+ "code_file": "run.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": false,
+ "dataset_sources": [
+  "ovnice/onechess-data",
+  "ovnice/onechess-train",
+  "ovnice/onechess-autojeu-data"
+ ],
+ "machine_shape": "NvidiaTeslaT4",
+ "competition_sources": [],
+ "kernel_sources": [
+  "ovnice/onechess-1-16-lambda"
+ ]
+}
