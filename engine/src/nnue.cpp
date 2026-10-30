@@ -688,6 +688,53 @@ void refresh(Accumulator& acc, const Position& pos) {
     refresh_side(acc, pos, BLACK);
 }
 
+// Table de Finny : pour chaque perspective et chaque bucket d'entree, le
+// dernier accumulateur calcule dans ce bucket et les pieces qu'il contenait.
+// Un changement de bucket (expert par materiel, ou roi) ne repart plus de
+// zero : on ne corrige que les pieces qui ont bouge depuis. Les poids
+// s'ajoutent en int16 sans saturation, donc le resultat est identique bit
+// pour bit a un recalcul complet, quel que soit l'ordre.
+namespace {
+struct FinnyEntry {
+    alignas(64) std::int16_t acc[HIDDEN_SIZE];
+    Bitboard      bb[COLOR_NB][PIECE_TYPE_NB];
+    std::uint32_t gen = 0;
+};
+thread_local FinnyEntry Finny[COLOR_NB][64][2];
+}  // namespace
+
+void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
+    if (Net->pairs)
+    {
+        refresh_side(acc, pos, p);
+        return;
+    }
+
+    const PerspInfo pi = persp_info_pos(p, pos, pos.square<KING>(p));
+    FinnyEntry&     e  = Finny[p][pi.bucket][pi.flip != 0];
+
+    if (e.gen != NetGen)
+    {
+        std::memcpy(e.acc, Net->featureBias, sizeof(e.acc));
+        std::memset(e.bb, 0, sizeof(e.bb));
+        e.gen = NetGen;
+    }
+
+    for (Color c : {WHITE, BLACK})
+        for (PieceType pt = PAWN; pt <= KING; ++pt)
+        {
+            const Bitboard now = pos.pieces(c, pt);
+            const Piece    pc  = make_piece(c, pt);
+            for (Bitboard b = e.bb[c][pt] & ~now; b;)
+                sub_feature(e.acc, weights_of(feature_index(p, pc, pop_lsb(b), pi)));
+            for (Bitboard b = now & ~e.bb[c][pt]; b;)
+                add_feature(e.acc, weights_of(feature_index(p, pc, pop_lsb(b), pi)));
+            e.bb[c][pt] = now;
+        }
+
+    std::memcpy(acc.v[p], e.acc, sizeof(e.acc));
+}
+
 // Bucket de sortie de la position courante.
 int current_bucket(const Position& pos) {
     return output_bucket(popcount(pos.pieces()), Net->outBuckets);
@@ -842,7 +889,7 @@ Value evaluate(const Position& pos) {
 
         for (Color c : {WHITE, BLACK})
             if (refreshSide[c])
-                refresh_side(pos.accumulator(st->accIndex), pos, c);
+                refresh_side_cached(pos.accumulator(st->accIndex), pos, c);
 
         // Les noeuds intermediaires ne sont declares valides que si les DEUX
         // perspectives y ont ete calculees par delta.
