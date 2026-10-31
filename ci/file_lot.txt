@@ -9,3 +9,4 @@ E2vsE1|EvalFile=reseau/essais/local/e2_mat4_o8.nnue|0 5|20|150|10|EvalFile=resea
 AvsAuto251|EvalFile=reseau/essais/kaggle/a_tout.nnue|0 5|10|150|20|EvalFile=reseau/onechess.nnue|tc:10+0.1
 BvsA|EvalFile=reseau/essais/kaggle/b_lambda.nnue|0 5|10|150|20|EvalFile=reseau/essais/kaggle/a_tout.nnue|tc:10+0.1
 E3vsE1|EvalFile=reseau/essais/local/e3_k16_m_o8.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/e1_mat4_o4.nnue|tc:10+0.1
+PvsE1|EvalFile=reseau/essais/local/p_fish_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/e1_mat4_o4.nnue|tc:10+0.1
