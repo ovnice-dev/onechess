@@ -830,11 +830,13 @@ def main():
                   f"val {vloss:.5f}  erreur {cp_err:6.1f} cp  "
                   f"({time.time()-t0:.0f} s)", flush=True)
 
+    # reprise d'un point deja a la fin : aucune epoque jouee ici, seul l'export reste
+    fin = (f"finale={cp_err:.1f}cp  ENTRAINEMENT={tr_err:.1f}cp"
+           if "tr_err" in locals() else "reprise d'un entrainement deja fini")
     print(f"RESULTAT  roi={args.buckets} miroir={args.mirror} "
           f"sortie={args.out_buckets} tronc={int(model.factorizer)} HL={args.hidden} "
           f"n={n} epoques={args.epochs}  meilleure_erreur={best[1]:.1f}cp "
-          f"(epoque {best[2]})  finale={cp_err:.1f}cp  "
-          f"ENTRAINEMENT={tr_err:.1f}cp", flush=True)
+          f"(epoque {best[2]})  {fin}", flush=True)
 
     if best_state is not None:
         model.load_state_dict(best_state)
