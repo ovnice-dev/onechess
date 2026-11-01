@@ -132,7 +132,19 @@ void MovePicker::score() {
         }
     }
 
-    const Bitboard threats = Type == CAPTURES ? Bitboard(0) : threat_map(pos);
+    // Memes attaques que threat_map(), sans refaire celles deja calculees
+    // pour ThreatOrder.
+    Bitboard threats = 0;
+    if constexpr (Type != CAPTURES)
+    {
+        if (Type == QUIETS && Tune::ThreatOrder && Tune::ThreatHist)
+        {
+            const Color them = ~pos.side_to_move();
+            threats = threatByLesser[QUEEN] | pos.attacks_by<QUEEN>(them) | pos.attacks_by<KING>(them);
+        }
+        else
+            threats = threat_map(pos);
+    }
 
     for (auto& m : *this)
     {

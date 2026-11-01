@@ -212,7 +212,8 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
     }
 }
 
-void update_quiet_stats(const Position& pos, Stack* ss, Thread* th, Move move, int bonus) {
+void update_quiet_stats(const Position& pos, Stack* ss, Thread* th, Move move, int bonus,
+                        Bitboard threats) {
     if (ss->killers[0] != move)
     {
         ss->killers[1] = ss->killers[0];
@@ -220,7 +221,7 @@ void update_quiet_stats(const Position& pos, Stack* ss, Thread* th, Move move, i
     }
 
     const Color us = pos.side_to_move();
-    th->mainHistory[us][hist_index(move, threat_map(pos))] << bonus;
+    th->mainHistory[us][hist_index(move, threats)] << bonus;
     if (ss->ply < LOW_PLY_HISTORY_SIZE)
         th->lowPlyHistory[ss->ply][move.from_to()] << bonus * 3 / 4;
     update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus);
@@ -270,14 +271,14 @@ void update_all_stats(const Position& pos,
 
     if (!pos.capture_stage(bestMove))
     {
-        update_quiet_stats(pos, ss, th, bestMove, bonus);
+        update_quiet_stats(pos, ss, th, bestMove, bonus, ss->threats);
 
         // Un coup essaye tard avait deja de mauvaises statistiques, sinon il
         // aurait ete essaye plus tot : il merite un malus plus leger. Le malus
         // decroit donc d'un coup a l'autre, repris de Stockfish. Inerte tant
         // que MalusDecay vaut 1024.
         int            qMalus  = malus;
-        const Bitboard threats = threat_map(pos);
+        const Bitboard threats = ss->threats;  // calculees une fois par le noeud
         for (int i = 0; i < quietCount; ++i)
         {
             const Move m = quietsSearched[i];
@@ -904,7 +905,13 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     {
         if (Threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? Eval::evaluate(pos) : VALUE_DRAW;
+            return (ss->ply >= MAX_PLY && !ss->inCheck)
+                   ? Eval::evaluate(pos)
+                   // DrawJitter : nulle a -1 ou +1 selon le compteur de noeuds,
+                   // pour ne pas figer la recherche sur les lignes de repetition
+                   // (value_draw de Stockfish).
+                   : DrawJitter ? Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2))
+                                : VALUE_DRAW;
 
         // Elagage par distance au mat : inutile de chercher un mat plus long
         // que celui qu'on tient deja.
@@ -957,7 +964,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         {
             if (!ttCapture)
                 update_quiet_stats(pos, ss, thisThread, ttMove,
-                                   TtCutHistSf ? 131 * depth : stat_bonus(depth));
+                                   TtCutHistSf ? 131 * depth : stat_bonus(depth), threat_map(pos));
 
             // Le coup precedent a permis cette coupure : il etait mauvais.
             // TtCutHistSf : malus fixe, pour les 4 premiers coups (Stockfish).
@@ -1106,7 +1113,10 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
                          : futility_margin(depth, improving))
                + RfpOppW * ((ss - 1)->staticEval != VALUE_NONE
                                      && ss->staticEval > -(ss - 1)->staticEval)
-               - (ss - 1)->statScore / 300 >= beta
+               - (ss - 1)->statScore / 300
+               // RfpCorr : forte correction = evaluation incertaine, marge
+               // elargie d'autant (Stockfish, Reckless).
+               - RfpCorr * ss->corrAbs / 64 >= beta
         && eval >= beta && eval < VALUE_TB_WIN_IN_MAX_PLY && (!ttMove || ttCapture))
         return beta > VALUE_TB_LOSS_IN_MAX_PLY ? (eval + beta) / 2 : eval;
 
@@ -1718,7 +1728,7 @@ moves_loop:
     if (PvNode)
         bestValue = std::min(bestValue, maxValue);
 
-    if (!excludedMove && !(rootNode && thisThread->rootMoves.size() > 1))
+    if (!excludedMove && !(rootNode && thisThread->rootMoves.size() > 1 && !RootTtSave))
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
                   bestValue >= beta          ? BOUND_LOWER
                   : PvNode && bestMove       ? BOUND_EXACT

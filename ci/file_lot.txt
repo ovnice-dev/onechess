@@ -15,5 +15,8 @@ PvsE1b|EvalFile=reseau/essais/local/p_fish_mat4_o4.nnue|0 5|10|150|20|EvalFile=r
 Combo9bT|LmrBase=56 LmrDivisor=267 LmrHistDiv=13093 NmpEvalDiv=227 FutilityMargin=98 HistPruneMargin=3409 SeeCaptureMargin=131 SeeQuietMargin=14 ProbcutMargin=177 SingularBetaFactor=24 SingularExtraMargin=17 StatBonusMul=253 StatBonusMax=1817 StatMalusMul=496 StatMalusMax=1911 QsFutilityMargin=109 QsDeltaMargin=145 RazorMargin=289 AspirationDelta=9 CorrHistDiv=10871 MalusDecay=933 ThreatOrder=49 ExtLimit=1 IirSf=1|0 3|20|150|20||tc:10+0.1
 #ANCIENNE_REF CausalRedT|CausalRed=512|0 3|20|150|20||tc:10+0.1
 #ANCIENNE_REF TmDefendT|TmDefendPct=500 TmEarlySave=200|0 3|20|100|20||tc:20+0.2
-CausalRedT2|CausalRed=512|0 3|20|150|20||tc:10+0.1
-#PAUSE TmDefendT2|TmDefendPct=500 TmEarlySave=200|0 3|20|100|20||tc:20+0.2
+#FINI CausalRedT2|CausalRed=512|0 3|20|150|20||tc:10+0.1
+TmDefendT2|TmDefendPct=500 TmEarlySave=200|0 3|10|100|20||tc:20+0.2
+DrawJitterT|DrawJitter=1|0 3|10|150|20||tc:10+0.1
+RootTtSaveT|RootTtSave=1|0 3|10|150|20||tc:10+0.1
+RfpCorrT|RfpCorr=32|0 3|10|150|20||tc:10+0.1

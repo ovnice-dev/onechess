@@ -50,6 +50,9 @@ double echelle_a(int materiel) {
     return ((-142.72052667 * m + 372.35176398) * m - 340.71073572) * m + 415.23490212;
 }
 
+// --fixe N : centipions = 100 * v / N (anciens Stockfish, ex. 208), au lieu de a(materiel)
+double fixe = 0;
+
 void pack(const binpack::TrainingDataEntry& e, Record& r) {
     static const int valeur[6] = {1, 3, 3, 5, 9, 0};
     std::memset(&r, 0, sizeof r);
@@ -65,7 +68,7 @@ void pack(const binpack::TrainingDataEntry& e, Record& r) {
         ++k;
     }
     const bool blanc = e.pos.sideToMove() == Color::White;
-    long cp = std::lround(100.0 * e.score / echelle_a(materiel));
+    long cp = std::lround(100.0 * e.score / (fixe > 0 ? fixe : echelle_a(materiel)));
     if (cp > 32000) cp = 32000;
     if (cp < -32000) cp = -32000;
     r.score  = std::int16_t(blanc ? cp : -cp);
@@ -92,6 +95,7 @@ int main(int argc, char** argv) {
         const std::string o = argv[i];
         if (o == "--garde") garde = std::atof(argv[i + 1]);
         else if (o == "--par") par = std::atoll(argv[i + 1]);
+        else if (o == "--fixe") fixe = std::atof(argv[i + 1]);
         else if (o == "--max") maxi = std::atoll(argv[i + 1]);
         else if (o == "--ply-min") ply_min = std::atoi(argv[i + 1]);
         else if (o == "--graine") graine = unsigned(std::atoi(argv[i + 1]));

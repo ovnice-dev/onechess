@@ -115,6 +115,9 @@
     X(Ldse,                           0,     0,   200) \
     X(ExtNegCut,                      0,     0,     1) \
     X(CausalRed,                      0,     0,  2048) \
+    X(DrawJitter,                     0,     0,     1) \
+    X(RootTtSave,                     0,     0,     1) \
+    X(RfpCorr,                        0,     0,   256) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
