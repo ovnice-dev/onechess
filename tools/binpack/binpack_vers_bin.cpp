@@ -14,10 +14,14 @@
 //   binpack_vers_bin fichier.binpack prefixe [--garde 0.1] [--par 50000000]
 //                    [--ply-min 16] [--max N] [--graine 1] [--fens N]
 //
-// Score ecrit : centipions du point de vue des blancs, a l'echelle de
-// Stockfish (100 * valeur interne / 208, comme le modele de victoire du
-// chargeur). Resultat : 0 = noirs gagnent, 1 = nulle, 2 = blancs gagnent.
+// Score ecrit : centipions UCI du point de vue des blancs, comme
+// UCIEngine::to_cp de Stockfish 19 : 100 * valeur interne / a(materiel)
+// (a ~ 304 a 58 de materiel). Nos etiquettes Lichess et d'autojeu sont dans
+// cette echelle ; diviser par 208 (31-10) gonflait les scores de ~1,45 et a
+// coute -162 Elo a l'essai P. Resultat : 0 = noirs gagnent, 1 = nulle,
+// 2 = blancs gagnent.
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
@@ -40,9 +44,16 @@ struct Record {
 };
 static_assert(sizeof(Record) == 32, "32 octets");
 
+// win_rate_params de Stockfish 19 (uci.cpp) : a(materiel)
+double echelle_a(int materiel) {
+    const double m = std::clamp(materiel, 17, 78) / 58.0;
+    return ((-142.72052667 * m + 372.35176398) * m - 340.71073572) * m + 415.23490212;
+}
+
 void pack(const binpack::TrainingDataEntry& e, Record& r) {
+    static const int valeur[6] = {1, 3, 3, 5, 9, 0};
     std::memset(&r, 0, sizeof r);
-    int k = 0;
+    int k = 0, materiel = 0;
     for (int s = 0; s < 64; ++s) {
         const Piece pc = e.pos.pieceAt(Square(s));
         if (pc == Piece::none())
@@ -50,10 +61,11 @@ void pack(const binpack::TrainingDataEntry& e, Record& r) {
         r.occ |= std::uint64_t(1) << s;
         const int code = ordinal(pc.type()) + 6 * ordinal(pc.color());
         r.pcs[k >> 1] |= std::uint8_t(code << ((k & 1) * 4));
+        materiel += valeur[ordinal(pc.type())];
         ++k;
     }
     const bool blanc = e.pos.sideToMove() == Color::White;
-    long cp = std::lround(100.0 * e.score / 208.0);
+    long cp = std::lround(100.0 * e.score / echelle_a(materiel));
     if (cp > 32000) cp = 32000;
     if (cp < -32000) cp = -32000;
     r.score  = std::int16_t(blanc ? cp : -cp);
