@@ -9,7 +9,7 @@
 //
 //        nom                     defaut   min    max
 #define TUNABLE_LIST(X) \
-    X(AspirationDelta,               10,     4,    50) \
+    X(AspirationDelta,               9,     4,    50) \
     X(AspirationMinDepth,             4,     1,    10) \
                                                        \
     X(RfpMaxDepth,                    8,     3,    15) \
@@ -17,16 +17,16 @@
     X(RfpImprovingBonus,             21,     0,    80) \
                                                        \
     X(RazorMaxDepth,                  3,     1,     8) \
-    X(RazorMargin,                  293,   100,   700) \
+    X(RazorMargin,                  289,   100,   700) \
                                                        \
     X(NmpMinDepth,                    3,     2,     8) \
     X(NmpBaseReduction,               4,     2,     6) \
     X(NmpDepthDiv,                    3,     2,     8) \
-    X(NmpEvalDiv,                   228,    50,   600) \
+    X(NmpEvalDiv,                   227,    50,   600) \
     X(NmpMaxEvalR,                    3,     0,     6) \
                                                        \
     X(ProbcutMinDepth,                5,     3,    10) \
-    X(ProbcutMargin,                179,    80,   350) \
+    X(ProbcutMargin,                177,    80,   350) \
                                                        \
     X(IirMinDepth,                    4,     2,    10) \
                                                        \
@@ -34,33 +34,33 @@
     X(LmpDepthFactor,                 1,     1,     4) \
                                                        \
     X(FutilityMaxDepth,               7,     3,    15) \
-    X(FutilityMargin,               103,    50,   250) \
+    X(FutilityMargin,               98,    50,   250) \
                                                        \
     X(HistPruneMaxDepth,              5,     2,    10) \
-    X(HistPruneMargin,             3487,  1000, 12000) \
+    X(HistPruneMargin,             3409,  1000, 12000) \
                                                        \
-    X(SeeCaptureMargin,             129,    50,   400) \
+    X(SeeCaptureMargin,             131,    50,   400) \
     X(SeeQuietMargin,                14,     5,   120) \
                                                        \
     X(LmrBase,                       56,    20,   150) \
-    X(LmrDivisor,                   266,   120,   400) \
-    X(LmrHistDiv,                  13190,  2000, 30000) \
+    X(LmrDivisor,                   267,   120,   400) \
+    X(LmrHistDiv,                  13093,  2000, 30000) \
                                                        \
     X(SingularMinDepth,               6,     4,    12) \
     X(SingularBetaFactor,            24,     8,    64) \
-    X(SingularExtraMargin,           18,     0,   100) \
+    X(SingularExtraMargin,           17,     0,   100) \
                                                        \
-    X(StatBonusMul,                 257,    50,   400) \
+    X(StatBonusMul,                 253,    50,   400) \
     X(StatBonusSub,                  81,     0,   400) \
-    X(StatBonusMax,                1826,   500,  4000) \
-    X(StatMalusMul,                 485,   100,   900) \
+    X(StatBonusMax,                1817,   500,  4000) \
+    X(StatMalusMul,                 496,   100,   900) \
     X(StatMalusSub,                 111,     0,   400) \
-    X(StatMalusMax,                1897,   500,  4000) \
+    X(StatMalusMax,                1911,   500,  4000) \
                                                        \
     X(QsDeltaMargin,                145,    50,   500) \
-    X(QsFutilityMargin,             111,    50,   400) \
+    X(QsFutilityMargin,             109,    50,   400) \
                                                        \
-    X(CorrHistDiv,                 11136,  1024, 65536) \
+    X(CorrHistDiv,                 10871,  1024, 65536) \
     X(CorrHistWeight,                 1,     1,     8) \
     X(CorrNpWeight,                   1,     0,     8) \
     X(CorrContWeight,                 1,     0,     8) \
@@ -72,7 +72,7 @@
     X(CapFutility,                    1,     0,     1) \
     X(ProbcutSf,                      1,     0,     1) \
     X(SmallProbcut,                   0,     0,   800) \
-    X(IirSf,                          0,     0,     1) \
+    X(IirSf,                          1,     0,     1) \
     X(NegExtSf,                       0,     0,     1) \
     X(MultiCutSf,                     0,     0,     1) \
     X(ImprovingBeta,                  0,     0,     1) \
@@ -93,15 +93,15 @@
     X(EvalDiffHist,                   1,     0,     1) \
     X(ContWeightsSf,                  0,     0,     1) \
     X(BonusSf,                        0,     0,     1) \
-    X(ThreatOrder,                    48,     0,    96) \
+    X(ThreatOrder,                    49,     0,    96) \
     X(CheckSeeMargin,                 0,     0,   400) \
     X(LowPlyHist,                     0,     0,    16) \
     X(CapStatMul,                     0,     0,  4000) \
-    X(MalusDecay,                   924,   512,  1024) \
+    X(MalusDecay,                   933,   512,  1024) \
     X(LmrDeeperMargin,                53,     0,   200) \
     X(LmrShallowerMargin,             8,     0,    60) \
     X(Hindsight,                      1,     0,     1) \
-    X(ExtLimit,                       0,     0,     1) \
+    X(ExtLimit,                       1,     0,     1) \
     X(TripleExtMargin,                0,     0,   200) \
     X(DoubleExtCap,                   0,     0,    20) \
     X(LmrCorr,                        0,     0,   300) \
