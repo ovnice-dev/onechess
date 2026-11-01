@@ -35,6 +35,7 @@ struct Stack {
     Bitboard        threats;     // menaces du noeud, pour l'index de l'historique principal
     int             doubleExt;   // extensions doubles ou plus deja prises sur la ligne
     int             corrAbs;     // ampleur de la correction d'evaluation du noeud
+    Move            refute;      // CausalRed : coup qui a coupe dans ce noeud, lu par le pere
 };
 
 // Un coup a la racine, avec sa variante principale et son score.

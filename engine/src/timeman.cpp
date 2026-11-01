@@ -13,7 +13,7 @@ TimeManagement Time;
 // Repartit le temps restant sur les coups a venir. La part allouee croit avec
 // le numero de coup jusqu'a un plateau : les coups 15 a 40 sont ceux qui
 // decident la partie, et une allocation plate les sous-alimente.
-void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int moveOverhead) {
+void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int moveOverhead, int pieces) {
 
     startTime = limits.startTime;
 
@@ -89,6 +89,11 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int mov
                               / (1.0 + double(limits.time[us]) + double(limits.time[~us]));
         optScale *= 1.0 + TmClockPct / 1000.0 * std::min(avantage, 0.0);
     }
+
+    // TmEarlySave (Triumviratus 8.0) : avec 24 pieces ou plus, les erreurs
+    // sont rares des deux cotes ; on garde le temps pour plus tard.
+    if (TmEarlySave && pieces >= 24)
+        optScale *= 1.0 - TmEarlySave / 1000.0;
 
     optimumTime = TimePoint(optScale * double(timeLeft));
     maximumTime = TimePoint(std::min((TmSfAlloc ? 0.8097 : 0.84) * double(limits.time[us]) - moveOverhead,

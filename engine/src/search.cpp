@@ -548,6 +548,11 @@ void Thread::iterative_deepening() {
             if (surprise)
                 factor *= TmSurprisePct / 100.0;
 
+            // Defense pas encore perdue (Triumviratus 8.0, +7,3 avec
+            // TmEarlySave) : c'est la que se perdent les parties a la pendule.
+            if (TmDefendPct && bestValue <= -TmDefendFrom && bestValue > -TmDefendTo)
+                factor *= 1.0 + TmDefendPct / 1000.0;
+
             // Un seul coup legal : rien a chercher
             const bool forced = TmSingleMs && rootMoves.size() == 1
                              && Time.elapsed() >= std::min<TimePoint>(TmSingleMs, Time.optimum());
@@ -874,6 +879,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     bool  givesCheck, improving, priorCapture;
     bool  capture, ttCapture;
     int   moveCount, captureCount, quietCount, alphaRaises = 0;
+    // CausalRed : cases de la refutation du dernier tranquille sous alpha
+    Bitboard causal = 0;
 
     Value unadjustedStaticEval = VALUE_NONE;
 
@@ -1439,6 +1446,7 @@ moves_loop:
           rootNode ? thisThread->nodes.load(std::memory_order_relaxed) : 0;
         thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
         pos.do_move(move, st, givesCheck);
+        (ss + 1)->refute = Move::none();
 
         // --------------------------------------------------------- LMR
         Depth r = reduction(depth, moveCount);
@@ -1470,6 +1478,13 @@ moves_loop:
         // LmrAlphaRaise : alpha deja ameliore dans ce noeud (Stormphrax, Viridithas).
         if (LmrAlphaRaise && alphaRaises)
             r += 1;
+        // CausalRed (Triumviratus 8.0, +4,3 chez lui) : un tranquille qui ne
+        // part ni n'arrive sur les cases de la refutation d'un frere ne change
+        // rien contre elle ; reduit de CausalRed/1024 de pli en moyenne (le
+        // compteur de noeuds sert de tirage, nos reductions sont entieres).
+        if (CausalRed && causal && !capture && !givesCheck && move != ttMove
+            && !((square_bb(move.from_sq()) | move.to_sq()) & causal))
+            r += (CausalRed + int(thisThread->nodes.load(std::memory_order_relaxed) & 1023)) >> 10;
         if (LmrFrac && LmrCutoffSf)
         {
             if ((ss + 1)->cutoffCnt > 1)
@@ -1579,6 +1594,21 @@ moves_loop:
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
+        // CausalRed : le coup adverse qui refute ce tranquille marque les
+        // cases du probleme : depart, arrivee, et ce qu'il attaque de la.
+        if (CausalRed && !capture && value <= alpha && (ss + 1)->refute.is_ok())
+        {
+            const Move  rm = (ss + 1)->refute;
+            const Piece pc = pos.piece_on(rm.from_sq());
+            if (pc != NO_PIECE)
+            {
+                const PieceType pt = type_of(pc);
+                causal = (pt == PAWN ? pawn_attacks_bb(color_of(pc), rm.to_sq())
+                                     : attacks_bb(pt, rm.to_sq(), pos.pieces()))
+                       | rm.from_sq() | rm.to_sq();
+            }
+        }
+
         if (Threads.stop.load(std::memory_order_relaxed))
             return VALUE_ZERO;
 
@@ -1626,6 +1656,7 @@ moves_loop:
                 if (value >= beta)
                 {
                     ss->cutoffCnt += 1 + !ttMove;
+                    ss->refute = move;
                     PROF_COUNT(FH_TOTAL, 1);
                     PROF_COUNT(FH_FIRST, moveCount == 1);
                     PROF_COUNT(FH_SUMIDX, moveCount);

@@ -114,6 +114,7 @@
     X(LmrAlphaRaise,                  0,     0,     1) \
     X(Ldse,                           0,     0,   200) \
     X(ExtNegCut,                      0,     0,     1) \
+    X(CausalRed,                      0,     0,  2048) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
@@ -126,6 +127,10 @@
     X(TmSfAlloc,                      0,     0,     1) \
     X(TmSurprisePct,                130,   100,   250) \
     X(TmLowMtg,                       0,     0,     1) \
+    X(TmDefendPct,                    0,     0,  1000) \
+    X(TmDefendFrom,                  45,     0,   300) \
+    X(TmDefendTo,                   360,   100,  1500) \
+    X(TmEarlySave,                    0,     0,   500) \
                                                        \
     X(Rule50Damp,                     0,     0,   512)
 

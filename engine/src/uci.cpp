@@ -100,7 +100,8 @@ Search::LimitsType parse_go(Position& pos, std::istringstream& is) {
 void go(Position& pos, std::istringstream& is, StateListPtr& states) {
     Search::LimitsType limits = parse_go(pos, is);
 
-    Time.init(limits, pos.side_to_move(), pos.game_ply(), int(Options["Move Overhead"]));
+    Time.init(limits, pos.side_to_move(), pos.game_ply(), int(Options["Move Overhead"]),
+              popcount(pos.pieces()));
     TT.new_search();
 
     // On lance et on rend la main : la boucle UCI doit rester capable de lire
@@ -215,7 +216,8 @@ void bench(std::istringstream& is) {
         limits.silent    = true;
 
         TT.clear(int(Options["Threads"]));
-        Time.init(limits, pos.side_to_move(), pos.game_ply(), int(Options["Move Overhead"]));
+        Time.init(limits, pos.side_to_move(), pos.game_ply(), int(Options["Move Overhead"]),
+              popcount(pos.pieces()));
         TT.new_search();
 
         Threads.start_thinking(pos, states, limits);

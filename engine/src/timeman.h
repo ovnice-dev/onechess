@@ -10,7 +10,7 @@ namespace one {
 // depasser, et un plafond (maximum) qui, lui, est absolu.
 class TimeManagement {
    public:
-    void init(Search::LimitsType& limits, Color us, int ply, int moveOverhead);
+    void init(Search::LimitsType& limits, Color us, int ply, int moveOverhead, int pieces = 32);
 
     TimePoint optimum() const { return optimumTime; }
     TimePoint maximum() const { return maximumTime; }
