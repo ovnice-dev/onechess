@@ -50,6 +50,9 @@ constexpr std::uint32_t THREAT_FLAG   = 512;
 // Couches cachees : 2 * HIDDEN_SIZE -> l1 -> l2 -> 1 par bucket de sortie, en
 // entiers (activations 0..QH). Bit HIDDEN_FLAG ; l1 et l2 suivent les menaces.
 constexpr std::uint32_t HIDDEN_FLAG = 1024;
+// Produit par paires avant l1 (Stockfish) : p = (a[i] * a[i + H/2]) >> 9 dans
+// [0, QH], H/2 entrees par perspective, poids l1 en int8.
+constexpr std::uint32_t PAIRMUL_FLAG = 2048;
 constexpr int           QH          = 127;
 constexpr int           MAX_L1      = 64;
 constexpr int           MAX_L2      = 64;

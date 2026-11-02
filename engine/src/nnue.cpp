@@ -69,12 +69,18 @@ struct Network {
     // h1w reordonnee pour le calcul creux : [bucket][paire d'entrees p][l1][2],
     // soit W1[j][2p], W1[j][2p+1] cote a cote pour chaque neurone j.
     std::int16_t*             h1t = nullptr;
+    // pairmul : poids l1 int8 reordonnes [bucket][groupe de 4 entrees][l1][4]
+    bool                      pairmul = false;
+    // h2w reordonnee pour le calcul vectoriel : [bucket][paire de x1][l2][2]
+    std::vector<std::int16_t> h2t;
+    std::int8_t*              h1t8    = nullptr;
     std::vector<std::int32_t> h1b, h2b, h3b;
     std::vector<std::int16_t> h2w, h3w;
 
     ~Network() {
         aligned_large_pages_free(h1w);
         aligned_large_pages_free(h1t);
+        aligned_large_pages_free(h1t8);
         aligned_large_pages_free(featureWeights);
         aligned_large_pages_free(featureWeights8);
         aligned_large_pages_free(pairWeights);
@@ -553,7 +559,10 @@ bool load(const std::string& path) {
     const bool pairs   = activation & PAIRS_FLAG;
     const bool threats = activation & THREAT_FLAG;
     const bool hasHidden = activation & HIDDEN_FLAG;
-    activation &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG);
+    const bool pairMul   = activation & PAIRMUL_FLAG;
+    activation &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG);
+    if (pairMul && !hasHidden)
+        return false;
     if (hasHidden && (threats || activation != ACT_CRELU))
         return false;   // couches cachees : CReLU, sans menaces
 
@@ -643,7 +652,7 @@ bool load(const std::string& path) {
         std::uint32_t l1 = 0, l2 = 0;
         f.read(reinterpret_cast<char*>(&l1), 4);
         f.read(reinterpret_cast<char*>(&l2), 4);
-        if (!f || l1 < 8 || l1 > MAX_L1 || l1 % 8 || l2 < 1 || l2 > MAX_L2)
+        if (!f || l1 < 8 || l1 > MAX_L1 || l1 % 8 || l2 < 8 || l2 > MAX_L2 || l2 % 8)
         {
             delete net;
             return false;
@@ -651,6 +660,38 @@ bool load(const std::string& path) {
         const int ob = net->outBuckets;
         net->l1 = int(l1);
         net->l2 = int(l2);
+        net->pairmul = pairMul;
+        if (pairMul)
+        {
+            // [ob][l1][HIDDEN_SIZE] int8, puis biais et couches suivantes
+            const std::size_t n8 = std::size_t(ob) * l1 * HIDDEN_SIZE;
+            std::vector<std::int8_t> w8(n8);
+            f.read(reinterpret_cast<char*>(w8.data()), std::streamsize(n8));
+            net->h1t8 = static_cast<std::int8_t*>(aligned_large_pages_alloc(n8));
+            if (!net->h1t8)
+            {
+                delete net;
+                return false;
+            }
+            for (int b = 0; b < ob; ++b)
+                for (int c = 0; c < HIDDEN_SIZE / 4; ++c)
+                    for (std::size_t j = 0; j < l1; ++j)
+                        for (int k = 0; k < 4; ++k)
+                            net->h1t8[((std::size_t(b) * HIDDEN_SIZE / 4 + c) * l1 + j) * 4 + k] =
+                              w8[(std::size_t(b) * l1 + j) * HIDDEN_SIZE + 4 * c + k];
+            net->h1b.resize(std::size_t(ob) * l1);
+            net->h2w.resize(std::size_t(ob) * l2 * l1);
+            net->h2b.resize(std::size_t(ob) * l2);
+            net->h3w.resize(std::size_t(ob) * l2);
+            net->h3b.resize(std::size_t(ob));
+            f.read(reinterpret_cast<char*>(net->h1b.data()), std::streamsize(net->h1b.size() * 4));
+            f.read(reinterpret_cast<char*>(net->h2w.data()), std::streamsize(net->h2w.size() * 2));
+            f.read(reinterpret_cast<char*>(net->h2b.data()), std::streamsize(net->h2b.size() * 4));
+            f.read(reinterpret_cast<char*>(net->h3w.data()), std::streamsize(net->h3w.size() * 2));
+            f.read(reinterpret_cast<char*>(net->h3b.data()), std::streamsize(net->h3b.size() * 4));
+        }
+        else
+        {
         const std::size_t h1Bytes = std::size_t(ob) * l1 * 2 * HIDDEN_SIZE * sizeof(std::int16_t);
         net->h1w = static_cast<std::int16_t*>(aligned_large_pages_alloc(h1Bytes));
         if (!net->h1w)
@@ -682,6 +723,14 @@ bool load(const std::string& path) {
                     for (int k = 0; k < 2; ++k)
                         net->h1t[((std::size_t(b) * in / 2 + p) * l1 + j) * 2 + k] =
                           net->h1w[(std::size_t(b) * l1 + j) * in + 2 * p + k];
+        }
+        net->h2t.resize(net->h2w.size());
+        for (int b = 0; b < ob; ++b)
+            for (std::size_t p = 0; p < l1 / 2; ++p)
+                for (std::size_t k = 0; k < l2; ++k)
+                    for (int e = 0; e < 2; ++e)
+                        net->h2t[((std::size_t(b) * l1 / 2 + p) * l2 + k) * 2 + e] =
+                          net->h2w[(std::size_t(b) * l2 + k) * l1 + 2 * p + e];
     }
     else
     {
@@ -839,6 +888,95 @@ Value output_threats(const Accumulator& acc, const Position& pos, int bucket) {
     return Value(std::clamp(cp, -12000, 12000));
 }
 
+// Premiere couche cachee apres produit par paires (Stockfish) :
+//   p  = (clamp(a[i], 0, QA) * clamp(a[i + H/2], 0, QA)) >> 9   dans [0, QH]
+//   x1 = clamp((W1 p + b1) / QB, 0, QH)                          W1 en int8
+// Calcul creux par groupes de 4 entrees (maddubs) : exact, en entiers.
+void pairmul_l1(const Accumulator& acc, Color stm, int bucket, std::int32_t* x1) {
+    const int l1 = Net->l1;
+    alignas(32) std::uint8_t in[HIDDEN_SIZE];
+    const std::int8_t*  wt = Net->h1t8 + std::size_t(bucket) * (HIDDEN_SIZE / 4) * l1 * 4;
+    const std::int32_t* b1 = Net->h1b.data() + std::size_t(bucket) * l1;
+#if defined(__AVX2__)
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i qa   = _mm256_set1_epi16(QA);
+    for (int h = 0; h < 2; ++h)
+    {
+        const std::int16_t* src = acc.v[h == 0 ? stm : ~stm];
+        for (int i = 0; i < HIDDEN_SIZE / 2; i += 32)
+        {
+            __m256i p[2];
+            for (int k = 0; k < 2; ++k)
+            {
+                __m256i a = _mm256_load_si256(reinterpret_cast<const __m256i*>(src + i + 16 * k));
+                __m256i b = _mm256_load_si256(
+                  reinterpret_cast<const __m256i*>(src + HIDDEN_SIZE / 2 + i + 16 * k));
+                a    = _mm256_min_epi16(_mm256_max_epi16(a, zero), qa);
+                b    = _mm256_min_epi16(_mm256_max_epi16(b, zero), qa);
+                p[k] = _mm256_srli_epi16(_mm256_mullo_epi16(a, b), 9);
+            }
+            const __m256i packed =
+              _mm256_permute4x64_epi64(_mm256_packus_epi16(p[0], p[1]), 0xD8);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(in + h * HIDDEN_SIZE / 2 + i), packed);
+        }
+    }
+    std::uint16_t nnz[HIDDEN_SIZE / 4];
+    int           n = 0;
+    for (int i = 0; i < HIDDEN_SIZE; i += 32)
+    {
+        const __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(in + i));
+        unsigned      m =
+          ~unsigned(_mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)))) & 0xFF;
+        while (m)
+        {
+            nnz[n++] = std::uint16_t(i / 4 + __builtin_ctz(m));
+            m &= m - 1;
+        }
+    }
+    const int     nr   = l1 / 8;
+    const __m256i ones = _mm256_set1_epi16(1);
+    __m256i       sum[MAX_L1 / 8];
+    for (int r = 0; r < nr; ++r)
+        sum[r] = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b1 + 8 * r));
+    const std::int32_t* in32 = reinterpret_cast<const std::int32_t*>(in);
+    for (int t = 0; t < n; ++t)
+    {
+        const int          c = nnz[t];
+        const __m256i      v = _mm256_set1_epi32(in32[c]);
+        const std::int8_t* w = wt + std::size_t(c) * l1 * 4;
+        for (int r = 0; r < nr; ++r)
+        {
+            const __m256i wv = _mm256_load_si256(reinterpret_cast<const __m256i*>(w + 32 * r));
+            sum[r] = _mm256_add_epi32(sum[r], _mm256_madd_epi16(_mm256_maddubs_epi16(v, wv), ones));
+        }
+    }
+    alignas(32) std::int32_t s1[MAX_L1];
+    for (int r = 0; r < nr; ++r)
+        _mm256_store_si256(reinterpret_cast<__m256i*>(s1 + 8 * r), sum[r]);
+    for (int j = 0; j < l1; ++j)
+        x1[j] = std::clamp(s1[j] / QB, 0, QH);
+#else
+    for (int h = 0; h < 2; ++h)
+    {
+        const std::int16_t* src = acc.v[h == 0 ? stm : ~stm];
+        for (int i = 0; i < HIDDEN_SIZE / 2; ++i)
+        {
+            const int a = std::clamp<int>(src[i], 0, QA);
+            const int b = std::clamp<int>(src[i + HIDDEN_SIZE / 2], 0, QA);
+            in[h * HIDDEN_SIZE / 2 + i] = std::uint8_t((a * b) >> 9);
+        }
+    }
+    for (int j = 0; j < l1; ++j)
+    {
+        std::int32_t s = b1[j];
+        for (int c = 0; c < HIDDEN_SIZE / 4; ++c)
+            for (int k = 0; k < 4; ++k)
+                s += in[4 * c + k] * wt[(std::size_t(c) * l1 + j) * 4 + k];
+        x1[j] = std::clamp(s / QB, 0, QH);
+    }
+#endif
+}
+
 // Couches cachees, en entiers. Meme formule que tools/check_nnue.py :
 //   a  = clamp(acc, 0, QA)                      (2 * HIDDEN_SIZE entrees)
 //   x1 = clamp(s1 * QH / (QA * QB), 0, QH)      s1 = W1 a + b1
@@ -850,6 +988,10 @@ Value output_hidden(const Accumulator& acc, Color stm, int bucket) {
     const std::int16_t* w1 = Net->h1w + std::size_t(bucket) * l1 * 2 * HIDDEN_SIZE;
 
     std::int32_t x1[MAX_L1];
+    if (Net->pairmul)
+        pairmul_l1(acc, stm, bucket, x1);
+    else
+    {
 #if defined(__AVX2__)
     // Calcul creux (Stockfish) : les activations sont ecretees une fois, on
     // ne garde que les paires d'entrees non nulles, et chacune s'ajoute aux l1
@@ -910,8 +1052,32 @@ Value output_hidden(const Accumulator& acc, Color stm, int bucket) {
         x1[j] = int(std::clamp<std::int64_t>(s * QH / (QA * QB), 0, QH));
     }
 #endif
+    }
 
-    std::int32_t x2[MAX_L2];
+    alignas(32) std::int32_t x2[MAX_L2];
+#if defined(__AVX2__)
+    {
+        // Paires de x1 diffusees, poids [paire][l2][2] : l2 / 8 sommes a la fois
+        const int           nr = l2 / 8;
+        const std::int16_t* wt = Net->h2t.data() + std::size_t(bucket) * (l1 / 2) * l2 * 2;
+        __m256i             sum[MAX_L2 / 8];
+        for (int r = 0; r < nr; ++r)
+            sum[r] = _mm256_loadu_si256(
+              reinterpret_cast<const __m256i*>(Net->h2b.data() + std::size_t(bucket) * l2 + 8 * r));
+        for (int p = 0; p < l1 / 2; ++p)
+        {
+            const __m256i v = _mm256_set1_epi32(x1[2 * p] | (x1[2 * p + 1] << 16));
+            const std::int16_t* w = wt + std::size_t(p) * l2 * 2;
+            for (int r = 0; r < nr; ++r)
+                sum[r] = _mm256_add_epi32(sum[r], _mm256_madd_epi16(v,
+                           _mm256_loadu_si256(reinterpret_cast<const __m256i*>(w + 16 * r))));
+        }
+        for (int r = 0; r < nr; ++r)
+            _mm256_store_si256(reinterpret_cast<__m256i*>(x2 + 8 * r), sum[r]);
+        for (int k = 0; k < l2; ++k)
+            x2[k] = std::clamp(x2[k] / QB, 0, QH);
+    }
+#else
     for (int k = 0; k < l2; ++k)
     {
         const std::int16_t* w = Net->h2w.data() + (std::size_t(bucket) * l2 + k) * l1;
@@ -920,6 +1086,7 @@ Value output_hidden(const Accumulator& acc, Color stm, int bucket) {
             s += x1[j] * w[j];
         x2[k] = std::clamp(s / QB, 0, QH);
     }
+#endif
 
     const std::int16_t* w3 = Net->h3w.data() + std::size_t(bucket) * l2;
     std::int64_t        s3 = Net->h3b[bucket];

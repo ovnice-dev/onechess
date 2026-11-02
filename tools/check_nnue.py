@@ -24,6 +24,7 @@ PAIRS_FLAG  = 256
 THREAT_INPUTS = 768          # menaces : piece (hors roi) attaquee par l'adversaire
 THREAT_FLAG   = 512
 HIDDEN_FLAG   = 1024         # couches cachees l1/l2 (voir train.py, export)
+PAIRMUL_FLAG  = 2048         # produit par paires avant l1, poids l1 en int8
 QH            = 127
 QA, QB, SCALE = 255, 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
@@ -71,7 +72,8 @@ class Net:
             self.pairs = bool(self.act & PAIRS_FLAG)
             self.threats = bool(self.act & THREAT_FLAG)
             self.hidden = bool(self.act & HIDDEN_FLAG)
-            self.act &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG)
+            self.pairmul = bool(self.act & PAIRMUL_FLAG)
+            self.act &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG)
             self.hl, self.nb, self.mirror, self.ob_n = hl, nb, mirror == 1, ob_n
             self.material = mirror == 2   # experts choisis par le materiel
             self.layout = np.frombuffer(f.read(64), dtype=np.uint8).astype(int)
@@ -88,7 +90,11 @@ class Net:
                 self.l1, self.l2 = l1, l2
                 rd = lambda n, t, shape: np.frombuffer(f.read(n * (2 if t == "<i2" else 4)),
                                                        dtype=t).reshape(shape).astype(np.int64)
-                self.w1 = rd(ob_n * l1 * 2 * hl, "<i2", (ob_n, l1, 2 * hl))
+                if self.pairmul:
+                    self.w1 = (np.frombuffer(f.read(ob_n * l1 * hl), dtype="i1")
+                               .reshape(ob_n, l1, hl).astype(np.int64))
+                else:
+                    self.w1 = rd(ob_n * l1 * 2 * hl, "<i2", (ob_n, l1, 2 * hl))
                 self.b1 = rd(ob_n * l1, "<i4", (ob_n, l1))
                 self.w2 = rd(ob_n * l2 * l1, "<i2", (ob_n, l2, l1))
                 self.b2 = rd(ob_n * l2, "<i4", (ob_n, l2))
@@ -171,9 +177,15 @@ class Net:
         # Meme formule de bucket qu'en C++ et dans l'entraineur
         b = (len(board.piece_map()) - 2) // (32 // self.ob_n)
         if self.hidden:
-            a = np.concatenate([us, them])
-            s1 = self.w1[b] @ a + self.b1[b]
-            x1 = np.array([min(QH, max(0, tdiv(int(v) * QH, QA * QB))) for v in s1], dtype=np.int64)
+            if self.pairmul:
+                h = self.hl // 2
+                a = np.concatenate([(us[:h] * us[h:]) >> 9, (them[:h] * them[h:]) >> 9])
+                s1 = self.w1[b] @ a + self.b1[b]
+                x1 = np.array([min(QH, max(0, tdiv(int(v), QB))) for v in s1], dtype=np.int64)
+            else:
+                a = np.concatenate([us, them])
+                s1 = self.w1[b] @ a + self.b1[b]
+                x1 = np.array([min(QH, max(0, tdiv(int(v) * QH, QA * QB))) for v in s1], dtype=np.int64)
             s2 = self.w2[b] @ x1 + self.b2[b]
             x2 = np.array([min(QH, max(0, tdiv(int(v), QB))) for v in s2], dtype=np.int64)
             s3 = int(self.w3[b] @ x2 + self.b3[b])
