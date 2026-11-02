@@ -46,6 +46,8 @@ BASE_INPUTS = 768
 PAIR_INPUTS = 96 * 95 // 2
 MAX_PAIRS   = 64      # borne pour le calcul du pire accumulateur
 PAIRS_FLAG  = 256     # bit du champ « activation » de l'en-tete .nnue
+HIDDEN_FLAG = 1024    # bit : couches cachees l1/l2 a la place de la sortie simple
+QH          = 127     # echelle des activations des couches cachees (int, 0..QH)
 MAX_PIECES  = 32
 QA, QB      = 255, 64
 SCALE       = 400
@@ -369,8 +371,12 @@ def pair_indices(codes, sqs, persp):
 
 class Perspective(nn.Module):
     def __init__(self, n_inputs, hidden, out_buckets=1, factorizer=False,
-                 activation="crelu", pairs=False, threats=False):
+                 activation="crelu", pairs=False, threats=False, l1=0, l2=0):
         super().__init__()
+        # Couches cachees (l1 > 0) : une pile par bucket de sortie,
+        # 2*hidden -> l1 -> l2 -> 1, activations CReLU. Sans elles, la sortie
+        # est un seul produit scalaire.
+        self.l1, self.l2 = l1, l2
         self.hidden      = hidden
         self.pairs       = pairs
         self.threats     = threats
@@ -408,6 +414,10 @@ class Perspective(nn.Module):
                 self.ft_v.weight[BASE_INPUTS].zero_()
         self.ft_bias = nn.Parameter(torch.zeros(hidden))
         self.out     = nn.Linear(2 * hidden, out_buckets)
+        if l1:
+            self.h1 = nn.Linear(2 * hidden, l1 * out_buckets)
+            self.h2 = nn.Linear(l1, l2 * out_buckets)
+            self.h3 = nn.Linear(l2, out_buckets)
 
         nn.init.normal_(self.ft.weight, std=0.01)
         with torch.no_grad():
@@ -435,6 +445,13 @@ class Perspective(nn.Module):
         us, them = us.clamp(0, 1), them.clamp(0, 1)
         if self.activation == "screlu":
             us, them = us * us, them * them
+        if self.l1:
+            ob = obuck if self.out_buckets > 1 else torch.zeros_like(obuck)
+            x = self.h1(torch.cat([us, them], dim=1)).view(-1, self.out_buckets, self.l1)
+            x = x.gather(1, ob.view(-1, 1, 1).expand(-1, 1, self.l1)).squeeze(1).clamp(0, 1)
+            x = self.h2(x).view(-1, self.out_buckets, self.l2)
+            x = x.gather(1, ob.view(-1, 1, 1).expand(-1, 1, self.l2)).squeeze(1).clamp(0, 1)
+            return self.h3(x).gather(1, ob.view(-1, 1)).squeeze(1)
         y = self.out(torch.cat([us, them], dim=1))
         if self.out_buckets == 1:
             return y.squeeze(1)
@@ -445,6 +462,9 @@ class Perspective(nn.Module):
             self.ft.weight.clamp_(-1.98, 1.98)
             self.ft_bias.clamp_(-1.98, 1.98)
             self.out.weight.clamp_(-1.98, 1.98)
+            if self.l1:
+                for h in (self.h1, self.h2, self.h3):
+                    h.weight.clamp_(-1.98, 1.98)
             self.ft.weight[self.pad].zero_()
             if self.factorizer:
                 self.ft_v.weight.clamp_(-1.98, 1.98)
@@ -519,7 +539,8 @@ def export(model, fmap, path, hidden, empirical=None):
         f.write(struct.pack("<IIIIII", MAGIC, hidden, fmap.nbuckets,
                             2 if fmap.material else int(fmap.mirror), model.out_buckets,
                             ACTIVATIONS[model.activation] | (PAIRS_FLAG if model.pairs else 0)
-                            | (THREAT_FLAG if model.threats else 0)))
+                            | (THREAT_FLAG if model.threats else 0)
+                            | (HIDDEN_FLAG if model.l1 else 0)))
         f.write(bytes(layout))
         f.write(fw_q.astype("<i2").tobytes())
         f.write(fb_q.astype("<i2").tobytes())
@@ -527,8 +548,24 @@ def export(model, fmap, path, hidden, empirical=None):
             f.write(pw_q.astype("<i2").tobytes())   # PAIR_INPUTS x hidden, apres le biais
         if tw_q is not None:
             f.write(tw_q.astype("<i2").tobytes())   # THREAT_INPUTS x hidden, apres les paires
-        f.write(ow_q.astype("<i2").tobytes())       # rangee-majeur par bucket
-        f.write(ob_q.astype("<i4").tobytes())
+        if model.l1:
+            # Couches cachees, entieres : a dans [0, QA] (sortie de l'accumulateur),
+            # x1 = clamp(s1 * QH / (QA * QB), 0, QH), x2 = clamp(s2 / QB, 0, QH),
+            # cp = s3 * SCALE / (QH * QB). Poids en int16 (x QB), biais en int32.
+            obn, l1, l2 = model.out_buckets, model.l1, model.l2
+            with torch.no_grad():
+                w1 = np.round(model.h1.weight.cpu().numpy() * QB).astype("<i2")          # (obn*l1, 2h)
+                b1 = np.round(model.h1.bias.cpu().numpy() * QA * QB).astype("<i4")
+                w2 = np.round(model.h2.weight.cpu().numpy() * QB).astype("<i2")          # (obn*l2, l1)
+                b2 = np.round(model.h2.bias.cpu().numpy() * QH * QB).astype("<i4")
+                w3 = np.round(model.h3.weight.cpu().numpy() * QB).astype("<i2")          # (obn, l2)
+                b3 = np.round(model.h3.bias.cpu().numpy() * QH * QB).astype("<i4")
+            f.write(struct.pack("<II", l1, l2))
+            for arr in (w1, b1, w2, b2, w3, b3):
+                f.write(arr.tobytes())
+        else:
+            f.write(ow_q.astype("<i2").tobytes())       # rangee-majeur par bucket
+            f.write(ob_q.astype("<i4").tobytes())
 
     print(f"reseau ecrit : {path}  ({os.path.getsize(path)/1e6:.1f} Mo)   "
           f"roi={fmap.nbuckets} miroir={int(fmap.mirror)} "
@@ -542,6 +579,8 @@ def main():
     ap.add_argument("--cache", default=r"C:\Onechess\data\nnue_cache2.npz")
     ap.add_argument("--out", default=r"C:\Onechess\engine\bin\onechess.nnue")
     ap.add_argument("--hidden", type=int, default=512)
+    ap.add_argument("--l1", type=int, default=0, help="couche cachee 1 (0 = aucune)")
+    ap.add_argument("--l2", type=int, default=32, help="couche cachee 2 (si --l1)")
     ap.add_argument("--ft-int8", type=int, default=0,
                     help="1 = premiere couche bornee pour le moteur ONE_FT_INT8")
     ap.add_argument("--buckets", default="plain", choices=list(BUCKET_LAYOUTS) + ["mat4"])
@@ -681,7 +720,9 @@ def main():
     fmap  = FeatureMap(args.buckets, bool(args.mirror), dev)
     model = Perspective(fmap.n_inputs, args.hidden, args.out_buckets,
                         bool(args.factorizer), args.activation, bool(args.pairs),
-                        bool(args.threats)).to(dev)
+                        bool(args.threats), args.l1, args.l2).to(dev)
+    if args.l1 and (args.activation != "crelu" or args.threats):
+        raise SystemExit("--l1 : CReLU seulement, sans menaces")
     if args.ft_int8:
         model.ft_clip = 127.0 / QA
     if args.init:

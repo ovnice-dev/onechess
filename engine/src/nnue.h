@@ -47,6 +47,13 @@ constexpr std::uint32_t PAIRS_FLAG  = 256;
 constexpr int           THREAT_INPUTS = 768;
 constexpr std::uint32_t THREAT_FLAG   = 512;
 
+// Couches cachees : 2 * HIDDEN_SIZE -> l1 -> l2 -> 1 par bucket de sortie, en
+// entiers (activations 0..QH). Bit HIDDEN_FLAG ; l1 et l2 suivent les menaces.
+constexpr std::uint32_t HIDDEN_FLAG = 1024;
+constexpr int           QH          = 127;
+constexpr int           MAX_L1      = 64;
+constexpr int           MAX_L2      = 64;
+
 constexpr std::uint32_t MAGIC  = 0x334E4E4F;  // "ONN3" : sans champ activation
 constexpr std::uint32_t MAGIC4 = 0x344E4E4F;  // "ONN4" : avec champ activation
 

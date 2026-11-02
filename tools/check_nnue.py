@@ -23,6 +23,8 @@ PAIR_INPUTS = 96 * 95 // 2   # paires de pions (PP_3Wide)
 PAIRS_FLAG  = 256
 THREAT_INPUTS = 768          # menaces : piece (hors roi) attaquee par l'adversaire
 THREAT_FLAG   = 512
+HIDDEN_FLAG   = 1024         # couches cachees l1/l2 (voir train.py, export)
+QH            = 127
 QA, QB, SCALE = 255, 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
 MAGIC4 = 0x344E4E4F     # avec champ activation
@@ -68,7 +70,8 @@ class Net:
             self.act = struct.unpack("<I", f.read(4))[0] if magic == MAGIC4 else 0
             self.pairs = bool(self.act & PAIRS_FLAG)
             self.threats = bool(self.act & THREAT_FLAG)
-            self.act &= ~(PAIRS_FLAG | THREAT_FLAG)
+            self.hidden = bool(self.act & HIDDEN_FLAG)
+            self.act &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG)
             self.hl, self.nb, self.mirror, self.ob_n = hl, nb, mirror == 1, ob_n
             self.material = mirror == 2   # experts choisis par le materiel
             self.layout = np.frombuffer(f.read(64), dtype=np.uint8).astype(int)
@@ -80,9 +83,21 @@ class Net:
                        .reshape(PAIR_INPUTS, hl).astype(np.int32) if self.pairs else None)
             self.tw = (np.frombuffer(f.read(THREAT_INPUTS * hl * 2), dtype="<i2")
                        .reshape(THREAT_INPUTS, hl).astype(np.int32) if self.threats else None)
-            self.ow = np.frombuffer(f.read(ob_n * 2 * hl * 2),
-                                    dtype="<i2").reshape(ob_n, 2 * hl).astype(np.int32)
-            self.ob = np.frombuffer(f.read(ob_n * 4), dtype="<i4").astype(np.int64)
+            if self.hidden:
+                l1, l2 = struct.unpack("<II", f.read(8))
+                self.l1, self.l2 = l1, l2
+                rd = lambda n, t, shape: np.frombuffer(f.read(n * (2 if t == "<i2" else 4)),
+                                                       dtype=t).reshape(shape).astype(np.int64)
+                self.w1 = rd(ob_n * l1 * 2 * hl, "<i2", (ob_n, l1, 2 * hl))
+                self.b1 = rd(ob_n * l1, "<i4", (ob_n, l1))
+                self.w2 = rd(ob_n * l2 * l1, "<i2", (ob_n, l2, l1))
+                self.b2 = rd(ob_n * l2, "<i4", (ob_n, l2))
+                self.w3 = rd(ob_n * l2, "<i2", (ob_n, l2))
+                self.b3 = rd(ob_n, "<i4", (ob_n,))
+            else:
+                self.ow = np.frombuffer(f.read(ob_n * 2 * hl * 2),
+                                        dtype="<i2").reshape(ob_n, 2 * hl).astype(np.int32)
+                self.ob = np.frombuffer(f.read(ob_n * 4), dtype="<i4").astype(np.int64)
 
     def persp_info(self, persp, ksq):
         rel = ksq if persp == chess.WHITE else ksq ^ 56
@@ -155,6 +170,14 @@ class Net:
 
         # Meme formule de bucket qu'en C++ et dans l'entraineur
         b = (len(board.piece_map()) - 2) // (32 // self.ob_n)
+        if self.hidden:
+            a = np.concatenate([us, them])
+            s1 = self.w1[b] @ a + self.b1[b]
+            x1 = np.array([min(QH, max(0, tdiv(int(v) * QH, QA * QB))) for v in s1], dtype=np.int64)
+            s2 = self.w2[b] @ x1 + self.b2[b]
+            x2 = np.array([min(QH, max(0, tdiv(int(v), QB))) for v in s2], dtype=np.int64)
+            s3 = int(self.w3[b] @ x2 + self.b3[b])
+            return max(-12000, min(12000, tdiv(s3 * SCALE, QH * QB)))
         w = self.ow[b]
 
         total = int((us * w[:self.hl]).sum() + (them * w[self.hl:]).sum())

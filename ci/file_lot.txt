@@ -17,7 +17,7 @@ Combo9bT|LmrBase=56 LmrDivisor=267 LmrHistDiv=13093 NmpEvalDiv=227 FutilityMargi
 #ANCIENNE_REF TmDefendT|TmDefendPct=500 TmEarlySave=200|0 3|20|100|20||tc:20+0.2
 #FINI CausalRedT2|CausalRed=512|0 3|20|150|20||tc:10+0.1
 RvsE1|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/e1_mat4_o4.nnue|tc:10+0.1
-TmDefendT2|TmDefendPct=500 TmEarlySave=200|0 3|10|100|20||tc:20+0.2
+#ARRETE TmDefendT2|TmDefendPct=500 TmEarlySave=200|0 3|10|100|20||tc:20+0.2
 DrawJitterT|DrawJitter=1|0 3|10|150|20||tc:10+0.1
 RootTtSaveT|RootTtSave=1|0 3|10|150|20||tc:10+0.1
 RfpCorrT|RfpCorr=32|0 3|10|150|20||tc:10+0.1

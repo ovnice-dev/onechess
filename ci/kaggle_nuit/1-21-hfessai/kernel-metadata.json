@@ -1,0 +1,17 @@
+{
+ "id": "ovnice/onechess-1-21-hfessai",
+ "title": "onechess-1-21-hfessai",
+ "code_file": "run.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": true,
+ "dataset_sources": [
+  "ovnice/onechess-rn5",
+  "ovnice/onechess-train"
+ ],
+ "machine_shape": "NvidiaTeslaT4",
+ "competition_sources": [],
+ "kernel_sources": []
+}
