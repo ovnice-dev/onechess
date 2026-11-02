@@ -390,6 +390,7 @@ class Perspective(nn.Module):
         self.out_buckets = out_buckets
         self.activation  = activation
         self.factorizer  = factorizer and n_inputs > BASE_INPUTS
+        self.ft_clip     = 0.0   # fixe par --ft-int8
         self.ft      = nn.EmbeddingBag(n_inputs + 1, hidden, mode="sum",
                                        padding_idx=n_inputs)
 
@@ -454,6 +455,19 @@ class Perspective(nn.Module):
             if self.threats:
                 self.th.weight.clamp_(-1.98, 1.98)
                 self.th.weight[THREAT_INPUTS].zero_()
+            # ft_clip : premiere couche bornee pour tenir en int8 dans le moteur
+            # (ONE_FT_INT8 : |poids| <= 127 / QA). On borne le poids FUSIONNE
+            # (bucket + tronc), celui que l'export ecrit, en reportant l'ecart
+            # sur la part du bucket.
+            if self.ft_clip:
+                c = self.ft_clip
+                n = self.ft.weight.shape[0] - 1
+                if self.factorizer:
+                    w = self.ft.weight[:n].view(n // BASE_INPUTS, BASE_INPUTS, -1)
+                    sh = self.ft_v.weight[:BASE_INPUTS].clamp_(-c, c)
+                    w.copy_((w + sh[None]).clamp_(-c, c) - sh[None])
+                else:
+                    self.ft.weight[:n].clamp_(-c, c)
 
 
 def export(model, fmap, path, hidden, empirical=None):
@@ -528,6 +542,8 @@ def main():
     ap.add_argument("--cache", default=r"C:\Onechess\data\nnue_cache2.npz")
     ap.add_argument("--out", default=r"C:\Onechess\engine\bin\onechess.nnue")
     ap.add_argument("--hidden", type=int, default=512)
+    ap.add_argument("--ft-int8", type=int, default=0,
+                    help="1 = premiere couche bornee pour le moteur ONE_FT_INT8")
     ap.add_argument("--buckets", default="plain", choices=list(BUCKET_LAYOUTS) + ["mat4"])
     ap.add_argument("--mirror", type=int, default=0)
     ap.add_argument("--out-buckets", type=int, default=1, choices=[1, 2, 4, 8])
@@ -666,6 +682,8 @@ def main():
     model = Perspective(fmap.n_inputs, args.hidden, args.out_buckets,
                         bool(args.factorizer), args.activation, bool(args.pairs),
                         bool(args.threats)).to(dev)
+    if args.ft_int8:
+        model.ft_clip = 127.0 / QA
     if args.init:
         model.load_state_dict(torch.load(args.init, map_location=dev))
         print(f"reprise des poids de {args.init}")
