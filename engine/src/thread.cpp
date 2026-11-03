@@ -166,6 +166,7 @@ void ThreadPool::start_thinking(Position&                 pos,
         th->completedDepth = 0;
         th->selDepth       = 0;
         th->nmpMinPly      = 0;
+        th->callsCnt       = 0;
         th->rootMoves      = rootMoves;
         th->rootPos.set(pos.fen(), pos.is_chess960(), &th->rootState);
         th->rootState = setupStates->back();

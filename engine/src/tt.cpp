@@ -1,9 +1,11 @@
 #include "tt.h"
 #include "prof.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <thread>
 #include <vector>
 
@@ -49,14 +51,18 @@ std::uint8_t TTEntry::relative_age(std::uint8_t generation8) const {
 
 void TranspositionTable::resize(std::size_t mbSize, int threadCount) {
     aligned_large_pages_free(table);
+    table = nullptr;
 
-    clusterCount = mbSize * 1024 * 1024 / sizeof(Cluster);
-
-    table = static_cast<Cluster*>(aligned_large_pages_alloc(clusterCount * sizeof(Cluster)));
-    if (!table)
+    // Une allocation refusee ne doit jamais laisser la table vide : la sonde
+    // dereferencerait un pointeur nul au premier coup. On divise par deux
+    // jusqu'a ce que la memoire suffise, et on le dit.
+    for (std::size_t mb = std::max<std::size_t>(mbSize, 1); !table && mb; mb /= 2)
     {
-        clusterCount = 0;
-        return;
+        clusterCount = mb * 1024 * 1024 / sizeof(Cluster);
+        table = static_cast<Cluster*>(aligned_large_pages_alloc(clusterCount * sizeof(Cluster)));
+        if (table && mb != mbSize)
+            std::cout << "info string Hash " << mbSize << " Mo refuse par le systeme, " << mb
+                      << " Mo alloues" << std::endl;
     }
 
     clear(threadCount);

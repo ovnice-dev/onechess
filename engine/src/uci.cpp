@@ -201,8 +201,10 @@ void bench(std::istringstream& is) {
 
     Prof::reset();
 
-    std::uint64_t total   = 0;
-    const TimePoint start = now();
+    std::uint64_t total = 0;
+    // Seul le temps de RECHERCHE compte : effacer 64 Mo de table a chaque
+    // position n'est pas de la vitesse de recherche.
+    std::chrono::steady_clock::duration searchTime{};
 
     for (const std::string& fen : BenchFEN)
     {
@@ -220,13 +222,16 @@ void bench(std::istringstream& is) {
               popcount(pos.pieces()));
         TT.new_search();
 
+        const auto t0 = std::chrono::steady_clock::now();
         Threads.start_thinking(pos, states, limits);
         Threads.wait_for_search_finished();
+        searchTime += std::chrono::steady_clock::now() - t0;
 
         total += Threads.nodes_searched();
     }
 
-    const TimePoint elapsed = std::max<TimePoint>(now() - start, 1);
+    const TimePoint elapsed = std::max<TimePoint>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(searchTime).count(), 1);
 
     std::cout << "\n==========================="
               << "\nProfondeur     : " << depth
@@ -500,6 +505,13 @@ void UCI::loop(int argc, char* argv[]) {
         std::istringstream is(cmd);
         std::string        token;
         is >> std::skipws >> token;
+
+        // Ces commandes touchent a ce que la recherche utilise (table,
+        // reseau, tables de finales, historiques, threads) : on attend
+        // qu'elle soit vraiment finie. "stop" ne fait que la PREVENIR.
+        if (token == "setoption" || token == "ucinewgame" || token == "bench" || token == "perft"
+            || token == "perfttest" || token == "eval")
+            Threads.main()->wait_for_search_finished();
 
         if (token == "quit" || token == "stop")
         {

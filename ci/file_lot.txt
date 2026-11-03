@@ -18,6 +18,12 @@ Combo9bT|LmrBase=56 LmrDivisor=267 LmrHistDiv=13093 NmpEvalDiv=227 FutilityMargi
 #FINI CausalRedT2|CausalRed=512|0 3|20|150|20||tc:10+0.1
 RvsE1|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/e1_mat4_o4.nnue|tc:10+0.1
 #ARRETE TmDefendT2|TmDefendPct=500 TmEarlySave=200|0 3|10|100|20||tc:20+0.2
+RHPvsR|EvalFile=reseau/essais/local/rhp_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1
+R1024vsR|EvalFile=reseau/essais/local/r1024_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_HIDDEN_SIZE=1024
+Ri8vsR|EvalFile=reseau/essais/local/ri8_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_FT_INT8
+SvsR|EvalFile=reseau/essais/local/s_mix_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1
 DrawJitterT|DrawJitter=1|0 3|10|150|20||tc:10+0.1
 RootTtSaveT|RootTtSave=1|0 3|10|150|20||tc:10+0.1
 RfpCorrT|RfpCorr=32|0 3|10|150|20||tc:10+0.1
+
+InsufMatT|InsufMat=1|0 3|10|150|20||tc:10+0.1

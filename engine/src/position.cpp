@@ -1,4 +1,5 @@
 #include "position.h"
+#include "tune.h"
 #include "prof.h"
 
 #include <algorithm>
@@ -217,7 +218,8 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
         enpassant = (pawn_attacks_bb(~sideToMove, st->epSquare) & pieces(sideToMove, PAWN))
                  && (pieces(~sideToMove, PAWN) & (st->epSquare + pawn_push(~sideToMove)))
-                 && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
+                 && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))))
+                 && ep_capture_legal(sideToMove, st->epSquare);
     }
 
     if (!enpassant)
@@ -235,6 +237,22 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     assert(pos_is_ok());
 
     return *this;
+}
+
+// Le camp c peut-il prendre en passant sur epSq sans laisser son roi en
+// prise ? Le pion adverse a prendre est devant epSq, du point de vue de c.
+bool Position::ep_capture_legal(Color c, Square epSq) const {
+    const Square   capSq = epSq - pawn_push(c);   // pion qui vient d'avancer de deux cases
+    const Square   ksq   = square<KING>(c);
+    const Bitboard theirs = pieces(~c) & ~square_bb(capSq);
+    for (Bitboard cand = pawn_attacks_bb(~c, epSq) & pieces(c, PAWN); cand;)
+    {
+        const Square   p   = pop_lsb(cand);
+        const Bitboard occ = (pieces() ^ p ^ capSq) | epSq;
+        if (!(attackers_to(ksq, occ) & theirs))
+            return true;
+    }
+    return false;
 }
 
 // Releve les pieces qui changent de case, pour que le reseau puisse mettre son
@@ -712,8 +730,15 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
         if ((int(to) ^ int(from)) == 16
             && (pawn_attacks_bb(us, to - pawn_push(us)) & pieces(them, PAWN)))
         {
-            st->epSquare = to - pawn_push(us);
-            k ^= Zobrist::enpassant[file_of(st->epSquare)];
+            // La case n'entre dans la cle que si la prise est LEGALE : deux
+            // positions ne different, pour la repetition, que par les coups
+            // reellement jouables (regle FIDE).
+            const Square epSq = to - pawn_push(us);
+            if (ep_capture_legal(them, epSq))
+            {
+                st->epSquare = epSq;
+                k ^= Zobrist::enpassant[file_of(epSq)];
+            }
         }
 
         else if (m.type_of() == PROMOTION)
@@ -1009,6 +1034,10 @@ bool Position::see_ge(Move m, int threshold) const {
 // Nulle par repetition, par la regle des 50 coups, ou par materiel insuffisant.
 bool Position::is_draw(int ply) const {
     PROF_SCOPE(DRAW);
+    // InsufMat : roi seul contre roi plus au plus une piece mineure (option, a tester)
+    if (Tune::InsufMat && !pieces(PAWN) && non_pawn_material() <= BishopValue)
+        return true;
+
     if (st->rule50 > 99 && (!checkers() || MoveList<LEGAL>(*this).size()))
         return true;
 

@@ -158,6 +158,7 @@ class Position {
 
    private:
     void set_dirty_piece(Move m, Piece pc, Piece captured, StateInfo& si) const;
+    bool ep_capture_legal(Color c, Square epSq) const;
     void set_castling_right(Color c, Square rfrom);
     void set_state();
     void set_check_info();

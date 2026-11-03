@@ -13,8 +13,6 @@
     X(AspirationMinDepth,             4,     1,    10) \
                                                        \
     X(RfpMaxDepth,                    8,     3,    15) \
-    X(RfpMargin,                     76,    40,   200) \
-    X(RfpImprovingBonus,             21,     0,    80) \
                                                        \
     X(RazorMaxDepth,                  3,     1,     8) \
     X(RazorMargin,                  289,   100,   700) \
@@ -118,6 +116,7 @@
     X(DrawJitter,                     0,     0,     1) \
     X(RootTtSave,                     0,     0,     1) \
     X(RfpCorr,                        0,     0,   256) \
+    X(InsufMat,                       0,     0,     1) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \

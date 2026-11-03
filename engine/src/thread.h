@@ -43,6 +43,7 @@ class Thread {
     Value             rootDelta      = 0;
     int               selDepth       = 0;
     int               nmpMinPly      = 0;
+    int               callsCnt       = 0;   // compte a rebours avant la prochaine lecture de l'horloge
     Color             nmpColor       = WHITE;
 
     std::atomic<std::uint64_t> nodes{0};

@@ -18,7 +18,7 @@ pour retirer du bruit la difficulte propre a l'ouverture.
 Exemple :
 
     python spsa.py --iters 4000 --tc 1+0.01 --workers 6 \\
-        --params LmrBase,20,150 LmrDivisor,120,400 RfpMargin,40,200
+        --params LmrBase,20,150 LmrDivisor,120,400 FutilityMargin,50,250
 """
 
 import argparse
@@ -45,7 +45,6 @@ DEFAULT_PARAMS = [
     ("LmrBase",           20,  150,   77),
     ("LmrDivisor",       120,  400,  233),
     ("LmrHistDiv",      2000, 30000, 9000),
-    ("RfpMargin",         40,  200,   78),
     ("RfpMaxDepth",        3,   15,    8),
     ("NmpBaseReduction",   2,    6,    4),
     ("NmpEvalDiv",        50,  600,  200),

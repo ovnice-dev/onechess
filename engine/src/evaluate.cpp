@@ -1,6 +1,7 @@
 #include "evaluate.h"
 #include "prof.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <sstream>
 
@@ -200,7 +201,7 @@ inline Value damp_rule50(Value v, const Position& pos) {
     if (!d || std::abs(int(v)) >= VALUE_TB_WIN_IN_MAX_PLY)
         return v;    // un score de mat n'est pas une quantite a amortir
 
-    return Value(int(v) * (d - pos.rule50_count()) / d);
+    return Value(int(v) * std::max(0, d - pos.rule50_count()) / d);
 }
 
 // Evaluation completement recalculee. Elle rend le score du point de vue du

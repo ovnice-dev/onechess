@@ -1,0 +1,18 @@
+{
+ "id": "ovnice/onechess-1-23-rhp",
+ "title": "onechess-1-23-rhp",
+ "code_file": "run.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": false,
+ "dataset_sources": [
+  "ovnice/onechess-rn5",
+  "ovnice/onechess-rhpckpt",
+  "ovnice/onechess-train"
+ ],
+ "machine_shape": "NvidiaTeslaT4",
+ "competition_sources": [],
+ "kernel_sources": []
+}

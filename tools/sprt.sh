@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Teste un changement de constante par SPRT, contre le moteur de reference.
 #
-#   ./sprt.sh RfpMargin 95                     teste RfpMargin=95 contre le defaut
+#   ./sprt.sh FutilityMargin 95                     teste FutilityMargin=95 contre le defaut
 #   ./sprt.sh LmrDivisor 210 -3 3              avec des bornes SPRT explicites
-#   ./sprt.sh RfpMargin 95 0 4 40000 n25000    a 25 000 noeuds fixes par coup
+#   ./sprt.sh FutilityMargin 95 0 4 40000 n25000    a 25 000 noeuds fixes par coup
 #
 # Le moteur est le meme binaire des deux cotes : seule l'option change. Cela
 # elimine toute difference de compilation, et rend le resultat attribuable a

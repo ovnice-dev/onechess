@@ -80,14 +80,19 @@ Value value_from_tt(Value v, int ply, int r50c) {
     if (v >= VALUE_TB_WIN_IN_MAX_PLY)
     {
         // Un mat plus lointain que la regle des 50 coups n'en est pas un
-        if (VALUE_MATE - v > 99 - r50c)
+        if (v >= VALUE_MATE_IN_MAX_PLY && VALUE_MATE - v > 99 - r50c)
+            return VALUE_TB_WIN_IN_MAX_PLY - 1;
+        // Gain des tables : meme garde, mesuree depuis VALUE_TB
+        if (v < VALUE_MATE_IN_MAX_PLY && VALUE_TB - v > 99 - r50c)
             return VALUE_TB_WIN_IN_MAX_PLY - 1;
         return Value(v - ply);
     }
 
     if (v <= VALUE_TB_LOSS_IN_MAX_PLY)
     {
-        if (VALUE_MATE + v > 99 - r50c)
+        if (v <= VALUE_MATED_IN_MAX_PLY && VALUE_MATE + v > 99 - r50c)
+            return VALUE_TB_LOSS_IN_MAX_PLY + 1;
+        if (v > VALUE_MATED_IN_MAX_PLY && VALUE_TB + v > 99 - r50c)
             return VALUE_TB_LOSS_IN_MAX_PLY + 1;
         return Value(v + ply);
     }
@@ -337,6 +342,17 @@ void check_time() {
 
     if ((Limits.use_time_management() || Limits.movetime) && Time.elapsed() >= Time.maximum())
         Threads.stop = true;
+}
+
+// Lecture de l'horloge par le thread principal, a intervalle fixe de noeuds
+// (recherche ET quiescence) : le test "nodes & 1023 == 0" a l'entree de
+// search() seule manquait tous les multiples de 1024 atteints en quiescence.
+inline void poll_time(Thread* th) {
+    if (th->is_main() && --th->callsCnt <= 0)
+    {
+        th->callsCnt = Limits.nodes ? int(std::min<std::uint64_t>(512, Limits.nodes / 1024)) : 512;
+        check_time();
+    }
 }
 
 template<NodeType nodeType>
@@ -590,8 +606,14 @@ void Thread::iterative_deepening() {
 
         if (is_main() && Limits.movetime && Time.elapsed() >= Time.optimum())
         {
-            Threads.stop = true;
-            break;
+            // Pendant le ponder, la decision d'arret attend le ponderhit
+            if (Ponder)
+                StopOnPonderhit = true;
+            else
+            {
+                Threads.stop = true;
+                break;
+            }
         }
     }
 
@@ -672,6 +694,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
     bestMove             = Move::none();
     ss->inCheck          = pos.checkers();
     moveCount            = 0;
+    poll_time(thisThread);
     const Value oldAlpha = alpha;
 
     // L'evaluation BRUTE est ce qui part en table de transposition ; la
@@ -895,8 +918,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     ss->doubleExt                                         = (ss - 1)->doubleExt;
 
     // Le thread principal surveille l'horloge pour tout le monde
-    if (thisThread->is_main() && (thisThread->nodes.load(std::memory_order_relaxed) & 1023) == 0)
-        check_time();
+    poll_time(thisThread);
 
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
@@ -1207,6 +1229,11 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 
             pos.undo_move(move);
 
+            // Apres un arret, value vient d'une recherche interrompue : ne
+            // surtout pas l'ecrire en table comme une borne prouvee.
+            if (Threads.stop.load(std::memory_order_relaxed))
+                return VALUE_ZERO;
+
             if (value >= probCutBeta)
             {
                 tte->save(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
@@ -1391,12 +1418,11 @@ moves_loop:
                 // nombre d'extensions doubles sur la ligne ; TripleExtMargin
                 // ajoute un troisieme pli pour un tranquille tres singulier.
                 if (!PvNode && value < singularBeta - SingularExtraMargin
-                    && (!DoubleExtCap || ss->doubleExt < DoubleExtCap))
+                    && (!DoubleExtCap || (ss - 1)->doubleExt < DoubleExtCap))
                 {
                     extension = 2;
                     if (TripleExtMargin && !ttCapture && value < singularBeta - TripleExtMargin)
                         extension = 3;
-                    ss->doubleExt++;
                 }
             }
 
@@ -1441,6 +1467,10 @@ moves_loop:
             cutNode = true;
 
         newDepth += extension;
+
+        // Extensions doubles prises sur la ligne de CE coup, et non cumulees
+        // sur tous les freres qui le suivent.
+        ss->doubleExt = (ss - 1)->doubleExt + (extension >= 2);
 
         ss->currentMove = move;
         ss->continuationHistory =
