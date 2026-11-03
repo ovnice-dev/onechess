@@ -370,6 +370,21 @@ def pair_indices(codes, sqs, persp):
 
 # --------------------------------------------------------------------------
 
+def epoch_files(n, k, epoch, seed):
+    """Fichiers de l'epoque (--epoch-files k) : on parcourt une suite de
+    permutations de tous les fichiers, k a la fois. Deterministe (graine,
+    numero d'epoque) : une reprise retrouve exactement les memes fichiers."""
+    start, out = (epoch - 1) * k, []
+    while len(out) < k:
+        cycle, off = divmod(start, n)
+        g = torch.Generator().manual_seed(seed * 7919 + cycle)
+        perm = torch.randperm(n, generator=g).tolist()
+        take = min(k - len(out), n - off)
+        out += perm[off:off + take]
+        start += take
+    return out
+
+
 class Perspective(nn.Module):
     def __init__(self, n_inputs, hidden, out_buckets=1, factorizer=False,
                  activation="crelu", pairs=False, threats=False, l1=0, l2=0, pairmul=False):
@@ -596,6 +611,8 @@ def main():
     ap.add_argument("--l1", type=int, default=0, help="couche cachee 1 (0 = aucune)")
     ap.add_argument("--l2", type=int, default=32, help="couche cachee 2 (si --l1)")
     ap.add_argument("--pairmul", type=int, default=0, help="1 = produit par paires avant l1")
+    ap.add_argument("--epoch-files", type=int, default=0,
+                    help="--stream : fichiers par epoque (0 = tous) ; pour les tres gros lots")
     ap.add_argument("--ft-int8", type=int, default=0,
                     help="1 = premiere couche bornee pour le moteur ONE_FT_INT8")
     ap.add_argument("--buckets", default="plain", choices=list(BUCKET_LAYOUTS) + ["mat4"])
@@ -837,7 +854,10 @@ def main():
         if args.stream:
             # Groupes de fichiers tires au hasard a chaque epoque ; chaque
             # fichier est deja un echantillon melange du lot entier.
-            fperm = torch.randperm(len(stream_files)).tolist()
+            if args.epoch_files:
+                fperm = epoch_files(len(stream_files), args.epoch_files, epoch, args.seed)
+            else:
+                fperm = torch.randperm(len(stream_files)).tolist()
             groupes = [[stream_files[i] for i in fperm[g:g + args.chunk_files]]
                        for g in range(0, len(fperm), args.chunk_files)]
         else:
