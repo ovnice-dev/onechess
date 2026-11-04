@@ -22,7 +22,7 @@ RHPvsR|EvalFile=reseau/essais/local/rhp_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=r
 R1024vsR|EvalFile=reseau/essais/local/r1024_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_HIDDEN_SIZE=1024
 Ri8vsR|EvalFile=reseau/essais/local/ri8_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_FT_INT8
 R1024HvsR1024|EvalFile=reseau/essais/local/r1024h_n5_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r1024_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_HIDDEN_SIZE=1024;x2=-DONE_HIDDEN_SIZE=1024
-SvsR|EvalFile=reseau/essais/local/s_mix_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1
+#ARRETE SvsR|EvalFile=reseau/essais/local/s_mix_mat4_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1
 DrawJitterT|DrawJitter=1|0 3|10|150|20||tc:10+0.1
 RootTtSaveT|RootTtSave=1|0 3|10|150|20||tc:10+0.1
 RfpCorrT|RfpCorr=32|0 3|10|150|20||tc:10+0.1
