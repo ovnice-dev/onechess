@@ -42,3 +42,16 @@ greeting:
   goodbye: "Good game, thanks for playing!"
   hello_spectators: "Hi! I'm {me}, a free and open-source chess engine. Source: github.com/ovnice-dev/onechess"
   goodbye_spectators: "Thanks for watching!"
+
+matchmaking:
+  allow_matchmaking: true          # defie d'autres bots quand il est inactif
+  allow_during_games: false
+  challenge_variant: "standard"
+  challenge_timeout: 30            # apres 30 minutes sans partie
+  challenge_initial_time: [60, 180, 300]
+  challenge_increment: [1, 2, 3]
+  opponent_rating_difference: 300
+  rating_preference: "none"
+  challenge_mode: "rated"
+  challenge_filter: coarse         # ne pas redefier un bot qui a refuse
+  include_challenge_block_list: false
