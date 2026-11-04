@@ -1163,8 +1163,11 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     }
 
     // --------------------------------------------------------- razoring
-    if (!PvNode && depth <= RazorMaxDepth
-        && eval + RazorMargin * depth < alpha)
+    // RazorAll (Stockfish, 2026) : le razoring est une coupure basse, il n'a
+    // sa place qu'aux noeuds ALL attendus ; la marge (RazorAll) est alors
+    // plus serree pour garder a peu pres le meme nombre de coupures.
+    if (!PvNode && depth <= RazorMaxDepth && (!RazorAll || !cutNode)
+        && eval + (RazorAll ? RazorAll : RazorMargin) * depth < alpha)
     {
         // Contrairement au RFP, ce n'est pas une coupure seche : on verifie
         // par une quiescence avant de rendre.

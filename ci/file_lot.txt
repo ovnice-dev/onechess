@@ -35,3 +35,4 @@ R6MarginT|R6Margin=100|0 3|10|150|20||tc:10+0.1
 PcAdaptT|PcAdapt=100|0 3|10|150|20||tc:10+0.1
 FutCorrT|FutCorr=32|0 3|10|150|20||tc:10+0.1
 FirstLmrT|FirstLmr=4|0 3|10|150|20||tc:10+0.1
+RazorAllT|RazorAll=205|0 3|10|150|20||tc:10+0.1
