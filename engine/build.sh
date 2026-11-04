@@ -48,12 +48,16 @@ case "$MODE" in
     # NET=... pour profiler avec un reseau d'une autre taille (voir
     # ONE_HIDDEN_SIZE) : un reseau refuse au chargement donnerait un profil
     # PSQT, sans rapport avec l'usage reel.
-    PNET="${NET:-$(pwd)/bin/onechess.nnue}"
+    PNET="${NET:-$(pwd -W 2>/dev/null || pwd)/bin/onechess.nnue}"
     printf 'setoption name EvalFile value %s
 bench 12
 bench 9
 ' "$PNET"       | ./bin/onechess-gen.exe > "$PDIR/profil.log" 2>&1
-    grep -qi "NNUE" "$PDIR/profil.log" || { echo "ECHEC : le reseau $PNET n'a pas ete charge pendant le profil" >&2; exit 1; }
+    # "NNUE absente" contient aussi le mot NNUE : on exige l'en-tete d'un
+    # reseau charge (NNUE 4x768x...) et aucun echec de chargement.
+    if grep -q "introuvable" "$PDIR/profil.log" || ! grep -q "NNUE [0-9]*x768x" "$PDIR/profil.log"; then
+        echo "ECHEC : le reseau $PNET n'a pas ete charge pendant le profil (chemin Windows : C:/...)" >&2; exit 1
+    fi
 
     echo "  3/3  recompilation guidee"
     g++ $COMMON $ARCH $INC ${EXTRA:-} -O3 -DNDEBUG -flto=auto -fno-exceptions         -fprofile-use="$PDIR" -fprofile-correction         $SRC -o "$OUT"

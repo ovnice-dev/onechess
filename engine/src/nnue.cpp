@@ -837,19 +837,50 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
         e.gen = NetGen;
     }
 
+    // Lignes a retirer et a ajouter, puis une seule passe par tuile de
+    // registres : l'accumulateur n'est lu et ecrit qu'une fois, dans l'entree
+    // de la table ET dans l'accumulateur du noeud (pas de copie a part).
+    const FtW* subs[32];
+    const FtW* adds[32];
+    int        ns = 0, na = 0;
     for (Color c : {WHITE, BLACK})
         for (PieceType pt = PAWN; pt <= KING; ++pt)
         {
             const Bitboard now = pos.pieces(c, pt);
             const Piece    pc  = make_piece(c, pt);
             for (Bitboard b = e.bb[c][pt] & ~now; b;)
-                sub_feature(e.acc, weights_of(feature_index(p, pc, pop_lsb(b), pi)));
+                subs[ns++] = weights_of(feature_index(p, pc, pop_lsb(b), pi));
             for (Bitboard b = now & ~e.bb[c][pt]; b;)
-                add_feature(e.acc, weights_of(feature_index(p, pc, pop_lsb(b), pi)));
+                adds[na++] = weights_of(feature_index(p, pc, pop_lsb(b), pi));
             e.bb[c][pt] = now;
         }
 
+#if defined(__AVX2__)
+    constexpr int TILE = 8;   // 8 registres de 16 valeurs : 128 valeurs par tuile
+    for (int j = 0; j < HIDDEN_SIZE; j += 16 * TILE)
+    {
+        __m256i v[TILE];
+        for (int t = 0; t < TILE; ++t)
+            v[t] = _mm256_load_si256(reinterpret_cast<const __m256i*>(e.acc + j + 16 * t));
+        for (int k = 0; k < ns; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = _mm256_sub_epi16(v[t], FT_LOAD(subs[k] + j + 16 * t));
+        for (int k = 0; k < na; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = _mm256_add_epi16(v[t], FT_LOAD(adds[k] + j + 16 * t));
+        for (int t = 0; t < TILE; ++t)
+        {
+            _mm256_store_si256(reinterpret_cast<__m256i*>(e.acc + j + 16 * t), v[t]);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(acc.v[p] + j + 16 * t), v[t]);
+        }
+    }
+#else
+    for (int k = 0; k < ns; ++k)
+        sub_feature(e.acc, subs[k]);
+    for (int k = 0; k < na; ++k)
+        add_feature(e.acc, adds[k]);
     std::memcpy(acc.v[p], e.acc, sizeof(e.acc));
+#endif
 }
 
 // Bucket de sortie de la position courante.
