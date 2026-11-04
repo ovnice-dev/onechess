@@ -12,7 +12,9 @@ OUT="${OUT:-bin/onechess.exe}"
 # StateInfo transporte desormais l'accumulateur NNUE (2 Ko) et la recherche
 # descend jusqu'a 246 plis : la pile par defaut de 1 Mo ne suffit plus.
 COMMON="-std=c++20 -Wall -Wextra -Wcast-qual -Wshadow -pthread -static -Wl,--stack,67108864"
-ARCH="-march=native -mtune=native -DUSE_PEXT"
+# ARCH=... pour un binaire de diffusion (tools/diffusion.sh) ; par defaut,
+# optimise pour la machine qui compile.
+ARCH="${ARCH:--march=native -mtune=native -DUSE_PEXT}"
 # Fathom inclut <tbconfig.h> entre chevrons, et compile en C++ :
 # son en-tete porte deja son propre extern "C".
 INC="-Ifathom"
