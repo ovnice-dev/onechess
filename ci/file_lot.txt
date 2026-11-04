@@ -28,3 +28,10 @@ RootTtSaveT|RootTtSave=1|0 3|10|150|20||tc:10+0.1
 RfpCorrT|RfpCorr=32|0 3|10|150|20||tc:10+0.1
 
 InsufMatT|InsufMat=1|0 3|10|150|20||tc:10+0.1
+CorrExpertT|CorrExpert=1|0 3|10|150|20||tc:10+0.1
+UpRepJT|UpRepJ=1|0 3|10|150|20||tc:10+0.1
+K1ExtT|K1Ext=1|0 3|10|150|20||tc:10+0.1
+R6MarginT|R6Margin=100|0 3|10|150|20||tc:10+0.1
+PcAdaptT|PcAdapt=100|0 3|10|150|20||tc:10+0.1
+FutCorrT|FutCorr=32|0 3|10|150|20||tc:10+0.1
+FirstLmrT|FirstLmr=4|0 3|10|150|20||tc:10+0.1

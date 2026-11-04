@@ -136,9 +136,19 @@ inline Key major_key(const Position& pos) {
          ^ bb_mix(pos.pieces(WHITE, KING), 0xbb) ^ bb_mix(pos.pieces(BLACK, KING), 0xcc);
 }
 
+// CorrExpert (Triumviratus, +3,2 chez lui) : la correction des structures de
+// pions est tenue a part pour chaque expert de materiel du reseau (mat4) : la
+// meme structure ne se juge pas pareil avec ou sans les pieces.
+inline Key pawn_corr_key(const Position& pos) {
+    if (!CorrExpert)
+        return pos.pawn_key();
+    const int b = std::min(3, (popcount(pos.pieces()) - 2) / 8);
+    return pos.pawn_key() ^ (Key(b + 1) * 0x9E3779B97F4A7C15ULL);
+}
+
 Value corrected_eval(Value v, const Thread* th, const Position& pos, const Stack* ss) {
     PROF_SCOPE(CORR);
-    const int cv = th->correctionHistory[pos.side_to_move()][correction_index(pos.pawn_key())];
+    const int cv = th->correctionHistory[pos.side_to_move()][correction_index(pawn_corr_key(pos))];
     v += Value(CorrHistWeight * cv * std::abs(cv) / CorrHistDiv);
 
     // Composante non-pions, une table par couleur de pieces. Les tables sont
@@ -316,7 +326,7 @@ void update_all_stats(const Position& pos,
 // toutes les tables de correction l'apprennent.
 void update_correction_history(const Position& pos, Stack* ss, Thread* th, int bonus) {
     const Color us = pos.side_to_move();
-    th->correctionHistory[us][correction_index(pos.pawn_key())] << bonus;
+    th->correctionHistory[us][correction_index(pawn_corr_key(pos))] << bonus;
     th->nonPawnCorrection[WHITE][us][correction_index(pos.non_pawn_key(WHITE))] << bonus;
     th->nonPawnCorrection[BLACK][us][correction_index(pos.non_pawn_key(BLACK))] << bonus;
     if (CorrMinorWeight)
@@ -916,6 +926,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     int   moveCount, captureCount, quietCount, alphaRaises = 0;
     // CausalRed : cases de la refutation du dernier tranquille sous alpha
     Bitboard causal = 0;
+    // R6 : ecart entre le score du coup de table et celui de la recherche singuliere
+    int singularGap = 0;
 
     Value unadjustedStaticEval = VALUE_NONE;
 
@@ -945,6 +957,15 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
                    // (value_draw de Stockfish).
                    : DrawJitter ? Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2))
                                 : VALUE_DRAW;
+
+        // UpRepJ : un coup ramene une position deja vue, la nulle est donc
+        // accessible ; alpha monte a une nulle bruitee (Stockfish).
+        if (UpRepJ && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
+        {
+            alpha = Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2));
+            if (alpha >= beta)
+                return alpha;
+        }
 
         // Elagage par distance au mat : inutile de chercher un mat plus long
         // que celui qu'on tient deja.
@@ -1233,7 +1254,11 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             // lancer la recherche courte.
             value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, 0);
 
-            const Depth pcDepth = ProbcutSf ? depth - (improving ? 5 : 3) : depth - 4;
+            Depth pcDepth = ProbcutSf ? depth - (improving ? 5 : 3) : depth - 4;
+            // PcAdapt (R12, V4) : plus la quiescence depasse, plus la
+            // verification est courte, aux noeuds CUT seulement.
+            if (PcAdapt && cutNode && value >= probCutBeta)
+                pcDepth -= std::clamp(int(value - probCutBeta) / PcAdapt, 0, 3);
             if (value >= probCutBeta && pcDepth > 0)
                 value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
                                        pcDepth, !cutNode);
@@ -1384,7 +1409,9 @@ moves_loop:
                 if (!ss->inCheck && lmrDepth <= FutilityMaxDepth)
                 {
                     const Value futVal =
-                      Value(ss->staticEval + FutilityMargin * (lmrDepth + 1) + history / 200);
+                      Value(ss->staticEval + FutilityMargin * (lmrDepth + 1) + history / 200
+                            // FutCorr (R1) : evaluation incertaine, marge elargie
+                            + FutCorr * ss->corrAbs / 64);
                     if (futVal <= alpha)
                     {
                         // FutValue : le score rendu tient compte du coup elague
@@ -1425,6 +1452,12 @@ moves_loop:
             if (value < singularBeta)
             {
                 extension = 1;
+                // R6 : de combien le coup de table domine-t-il les autres ?
+                singularGap = int(ttValue - value);
+                // K1Ext : le pere avait reduit ce noeud, mais son coup de table
+                // est singulier : on lui rend (une partie de) la reduction.
+                if (K1Ext && priorReduction > 0)
+                    extension += std::min(priorReduction, int(K1Ext));
 
                 // Nettement singulier : on creuse encore. DoubleExtCap borne le
                 // nombre d'extensions doubles sur la ligne ; TripleExtMargin
@@ -1590,7 +1623,18 @@ moves_loop:
             r = rf / 1024;
         }
 
-        if (depth >= 2 && moveCount > 1 + rootNode)
+        // R6Margin : coup de table tres dominant, les autres sont moins credibles
+        if (R6Margin && move != ttMove && singularGap > R6Margin)
+            r += 1;
+
+        // FirstLmr (R4, Reckless) : aux noeuds non-PV, meme le premier coup
+        // est reduit d'un pli quand la reduction calculee est grande.
+        const bool firstRed =
+          FirstLmr && !PvNode && !rootNode && moveCount == 1 && depth >= 2 && r >= FirstLmr;
+        if (firstRed)
+            r = 1;
+
+        if (depth >= 2 && (moveCount > 1 + rootNode || firstRed))
         {
             // Fenetre nulle a profondeur reduite. Si le coup bat alpha malgre
             // la reduction, il faut le rechercher pour de bon.

@@ -117,6 +117,13 @@
     X(RootTtSave,                     0,     0,     1) \
     X(RfpCorr,                        0,     0,   256) \
     X(InsufMat,                       0,     0,     1) \
+    X(CorrExpert,                     0,     0,     1) \
+    X(UpRepJ,                         0,     0,     1) \
+    X(K1Ext,                          0,     0,     3) \
+    X(R6Margin,                       0,     0,   400) \
+    X(PcAdapt,                        0,     0,   400) \
+    X(FutCorr,                        0,     0,   256) \
+    X(FirstLmr,                       0,     0,    10) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
