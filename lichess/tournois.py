@@ -3,8 +3,9 @@
 1. Inscrit le bot aux tournois a venir de ses equipes, et lit leur reglement
    (nom + description) pour y trouver une interdiction du livre d'ouvertures
    ou des tables de finales (anglais ou francais).
-2. 15 minutes avant un tournoi qui en interdit, coupe ce qu'il faut ; 5 minutes
-   apres sa fin, remet tout. Chaque changement redemarre lichess-bot.
+2. 30 minutes avant un tournoi : plus de defis (ni lances, ni acceptes), et
+   coupe le livre ou les tables s'il les interdit ; 5 minutes apres sa fin,
+   remet tout. Chaque changement redemarre lichess-bot.
 3. Note chaque decision dans ~/tournois.log.
 Le jeton est lu dans la configuration de lichess-bot ; il n'est jamais affiche.
 """
@@ -23,7 +24,7 @@ CFG = os.path.join(ICI, "lichess-bot", "config.yml")
 ETAT = os.path.join(ICI, "tournois_etat.json")
 JOURNAL = os.path.join(ICI, "tournois.log")
 TABLES = "/home/ubuntu/syzygy"
-AVANT, APRES = 15 * 60, 5 * 60
+AVANT, APRES = 30 * 60, 5 * 60   # repos et reglages : 30 min avant le debut, 5 min apres la fin
 
 NEG = r"(?:no|not|without|forbidden|banned|prohibited|disallowed|disabled|off|sans|pas\s+de|interdit\w*|aucun\w*)"
 LIVRE = r"(?:opening\s*books?|books?|livres?(?:\s+d.ouvertures?)?|polyglot)"
@@ -59,18 +60,29 @@ def note(msg):
 
 
 def config_actuelle():
+    """(livre, tables, ouvert) ; ouvert = defis automatiques et defis recus acceptes."""
     s = open(CFG).read()
     livre = re.search(r"^  polyglot:\n    enabled: (\w+)", s, re.M)
     tables = re.search(r"^    SyzygyPath: \"([^\"]*)\"", s, re.M)
+    defis = re.search(r"^  allow_matchmaking: (\w+)", s, re.M)
     return (bool(livre) and livre.group(1) == "true",
-            bool(tables) and tables.group(1) not in ("", "<empty>"))
+            bool(tables) and tables.group(1) not in ("", "<empty>"),
+            bool(defis) and defis.group(1) == "true")
 
 
-def regler(livre, tables):
+def regler(livre, tables, ouvert):
     s = open(CFG).read()
     s = re.sub(r"^(  polyglot:\n    enabled: )\w+", r"\g<1>" + ("true" if livre else "false"), s, flags=re.M)
     s = re.sub(r"^    SyzygyPath: \"[^\"]*\"", "    SyzygyPath: \"" + (TABLES if tables else "<empty>") + "\"",
                s, flags=re.M)
+    # Repos avant et pendant un tournoi : plus de defis lances, et les defis
+    # recus sont refuses avec le motif "later" (0 partie par adversaire). Les
+    # parties du tournoi ne sont pas des defis : elles ne sont pas touchees.
+    s = re.sub(r"^  allow_matchmaking: \w+", "  allow_matchmaking: " + ("true" if ouvert else "false"),
+               s, flags=re.M)
+    s = re.sub(r"^  max_simultaneous_games_per_user: \d+\n", "", s, flags=re.M)
+    if not ouvert:
+        s = re.sub(r"^(challenge:\n)", r"\g<1>  max_simultaneous_games_per_user: 0\n", s, flags=re.M)
     open(CFG, "w").write(s)
     subprocess.run(["sudo", "systemctl", "restart", "lichessbot"], check=False)
 
@@ -123,10 +135,11 @@ def main():
     # 2. Reglage du bot selon les tournois en cours ou imminents
     maintenant = time.time()
     actifs = [r for r in etat.values() if r["debut"] - AVANT <= maintenant <= r["fin"] + APRES]
-    voulu = (all(r["livre"] for r in actifs), all(r["tables"] for r in actifs))
+    voulu = (all(r["livre"] for r in actifs), all(r["tables"] for r in actifs), not actifs)
     if voulu != config_actuelle():
         regler(*voulu)
-        note(f"reglage : livre {'oui' if voulu[0] else 'non'}, tables {'oui' if voulu[1] else 'non'}"
+        note(f"reglage : livre {'oui' if voulu[0] else 'non'}, tables {'oui' if voulu[1] else 'non'}, "
+             f"defis {'oui' if voulu[2] else 'non (repos tournoi)'}"
              + (f" (tournoi : {', '.join(r['nom'] for r in actifs)})" if actifs else " (plus de tournoi en cours)"))
 
     # Les tournois finis depuis plus d'un jour sortent de l'etat

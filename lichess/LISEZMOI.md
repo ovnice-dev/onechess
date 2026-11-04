@@ -21,5 +21,5 @@ Le jeton est un secret : ne jamais le publier ni le copier dans le dépôt.
 
 `tournois.py`, lancé toutes les 5 minutes (minuterie systemd), inscrit le bot
 aux tournois à venir de ses équipes de bots, lit leur règlement et coupe le
-livre ou les tables 15 minutes avant un tournoi qui les interdit, puis remet
+livre ou les tables (et arrete les defis) 30 minutes avant un tournoi, puis remet
 tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
