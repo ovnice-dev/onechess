@@ -23,3 +23,9 @@ Le jeton est un secret : ne jamais le publier ni le copier dans le dépôt.
 aux tournois à venir de ses équipes de bots, lit leur règlement et coupe le
 livre ou les tables (et arrete les defis) 30 minutes avant un tournoi, puis remet
 tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
+
+## Cadences des défis (automatique)
+
+`categories.py`, lancé chaque minute, fait tourner la cadence des défis
+automatiques : bullet, puis blitz, puis rapide, dès que 10 défis de suite n'ont
+donné aucune partie. La catégorie qui donne des parties est gardée.
