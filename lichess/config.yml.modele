@@ -38,7 +38,7 @@ challenge:
   max_increment: 20
 
 greeting:
-  hello: "Bonjour ! Je suis {me}, un moteur d'echecs libre (GPL-3.0). Bonne partie !"
-  goodbye: "Merci pour la partie !"
-  hello_spectators: "Je suis {me}, un moteur d'echecs libre."
-  goodbye_spectators: "Merci d'avoir regarde !"
+  hello: "Hi! I'm {me}, a free and open-source chess engine (GPL-3.0). Good luck and have fun!"
+  goodbye: "Good game, thanks for playing!"
+  hello_spectators: "Hi! I'm {me}, a free and open-source chess engine. Source: github.com/ovnice-dev/onechess"
+  goodbye_spectators: "Thanks for watching!"

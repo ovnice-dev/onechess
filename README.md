@@ -1,84 +1,89 @@
 # Onechess
 
-Moteur d'échecs UCI écrit en C++, avec une évaluation par réseau de neurones NNUE.
+*[Version française](README.fr.md)*
 
-**Auteur et créateur : ovnice** (GitHub : [ovnice-dev](https://github.com/ovnice-dev)).
-Onechess a été conçu et développé à partir de 2026 par ovnice ; l'historique
-de ce dépôt et le dépôt d'archive privé en gardent la trace datée.
+UCI chess engine written in C++, with an NNUE neural-network evaluation.
 
-## Caractéristiques
+**Author and creator: ovnice** (GitHub: [ovnice-dev](https://github.com/ovnice-dev)).
+Onechess has been designed and developed by ovnice since 2026; the history of
+this repository and of the private archive repository keep a dated record of it.
 
-- recherche alpha-bêta (PVS) avec table de transposition, LMR, coup nul,
-  historiques de continuation et de menaces, corrections d'évaluation ;
-- réseau NNUE 768 → 512×2 → 4 sorties (4 experts selon le matériel), entraîné
-  sur des parties Lichess Elite étiquetées et sur de l'autojeu Stockfish 19 ;
-- tables de finales Syzygy (via Fathom) ;
-- gestion du temps par effort en nœuds ;
-- UCI : ponder, Chess960, `go mate`, Syzygy ;
-- chaque changement est validé par SPRT pentanomial (ouvertures UHO).
+## Features
 
-## Compiler
+- alpha-beta search (PVS) with transposition table, LMR, null move,
+  continuation and threat histories, evaluation corrections;
+- NNUE network 768 → 512×2 → 4 outputs (4 experts selected by material),
+  trained on labelled Lichess Elite games and Stockfish 19 self-play;
+- Syzygy endgame tablebases (through Fathom);
+- node-effort based time management;
+- UCI: ponder, Chess960, `go mate`, MultiPV, WDL output, Syzygy;
+- every change is validated by a pentanomial SPRT (UHO openings).
+
+## Play against Onechess
+
+Onechess plays on Lichess as [OnechessBot](https://lichess.org/@/OnechessBot).
+
+## Build
 
 ```bash
 cd engine
 bash build.sh
 ```
 
-## Utiliser
+## Usage
 
-Placer `onechess.exe` et `onechess.nnue` dans le même dossier, puis ajouter
-`onechess.exe` comme moteur UCI dans l'interface (En Croissant, Arena, Cute
-Chess…). Le réseau est cherché à côté de l'exécutable ; sans lui, le moteur
-joue avec une évaluation simple, beaucoup plus faible.
+Put `onechess.exe` and `onechess.nnue` in the same folder, then add
+`onechess.exe` as a UCI engine in your GUI (En Croissant, Arena, Cute Chess…).
+The network is looked up next to the executable; without it, the engine falls
+back to a simple evaluation and is much weaker.
 
-## Options UCI
+## UCI options
 
-| Option | Rôle |
+| Option | Purpose |
 |---|---|
-| `Hash`, `Threads`, `Clear Hash` | table de transposition (Mo), fils de recherche |
-| `Move Overhead` | marge de temps par coup (ms), pour les interfaces lentes |
-| `EvalFile` | réseau NNUE (par défaut `onechess.nnue`, cherché à côté de l'exécutable) |
-| `Ponder`, `UCI_Chess960` | réflexion sur le temps adverse, échecs aléatoires Fischer |
-| `SyzygyPath`, `SyzygyProbeDepth`, `SyzygyProbeLimit`, `Syzygy50MoveRule` | tables de finales Syzygy |
-| `MultiPV` | nombre de meilleures lignes affichées (analyse) |
-| `UCI_ShowWDL` | probabilités gain / nulle / perte dans chaque ligne `info` |
-| `Debug Log File` | copie de tout le dialogue UCI dans un fichier |
+| `Hash`, `Threads`, `Clear Hash` | transposition table (MB), search threads |
+| `Move Overhead` | time margin per move (ms), for slow interfaces |
+| `EvalFile` | NNUE network (default `onechess.nnue`, looked up next to the executable) |
+| `Ponder`, `UCI_Chess960` | thinking on the opponent's time, Fischer random chess |
+| `SyzygyPath`, `SyzygyProbeDepth`, `SyzygyProbeLimit`, `Syzygy50MoveRule` | Syzygy endgame tablebases |
+| `MultiPV` | number of best lines shown (analysis) |
+| `UCI_ShowWDL` | win / draw / loss probabilities in each `info` line |
+| `Debug Log File` | copy of the whole UCI dialogue into a file |
 
-Les constantes internes de la recherche restent réglables par `setoption`
-(tests et réglages), mais ne sont pas listées par `uci`.
+The internal search constants can still be set with `setoption` (for testing
+and tuning), but they are not listed by `uci`.
 
-## Quel binaire choisir
+## Which binary to choose
 
-| Binaire | Processeurs |
+| Binary | Processors |
 |---|---|
-| `onechess-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants |
-| `onechess-avx2.exe` | AMD Zen 1 et Zen 2 |
-| `onechess-sse41.exe` | processeurs sans AVX2 (lent) |
+| `onechess-bmi2.exe` | Intel since Haswell (2013), AMD Zen 3 and later |
+| `onechess-avx2.exe` | AMD Zen 1 and Zen 2 |
+| `onechess-sse41.exe` | processors without AVX2 (slow) |
 
-Les trois jouent exactement la même partie (`bench 12` identique) ; seule la
-vitesse change. Ils se construisent par `bash tools/diffusion.sh`.
+All three play exactly the same game (identical `bench 12`); only the speed
+differs. They are built with `bash tools/diffusion.sh`.
 
-## Données d'entraînement
+## Training data
 
-- Parties de la base Lichess Elite, positions étiquetées par Stockfish.
-- Autojeu de Stockfish 19 produit pour ce projet.
-- Autojeu public de Stockfish à 5 000 nœuds (`official-stockfish/master-binpacks`
-  sur Hugging Face, licence ODbL), pour les réseaux à venir.
-- Lecture des fichiers binpack : code de `nnue-pytorch` (GPLv3), dans
-  `tools/binpack/lib/`.
+- Games from the Lichess Elite database, positions labelled by Stockfish.
+- Stockfish 19 self-play generated for this project.
+- Public Stockfish self-play at 5,000 nodes (`official-stockfish/master-binpacks`
+  on Hugging Face, ODbL license), for the upcoming networks.
+- Binpack reading: code from `nnue-pytorch` (GPLv3), in `tools/binpack/lib/`.
 
-## Licence
+## License
 
 Copyright (C) 2026 ovnice.
 
-Onechess est un logiciel libre distribué sous la **GNU General Public License
-version 3** (voir [LICENSE](LICENSE)). Vous pouvez l'utiliser, le modifier et le
-redistribuer, **à condition** de conserver cette mention de copyright et le
-crédit de l'auteur, de fournir le code source de toute version distribuée, et
-de la placer sous la même licence.
+Onechess is free software distributed under the **GNU General Public License
+version 3** (see [LICENSE](LICENSE)). You may use, modify and redistribute it,
+**provided that** you keep this copyright notice and the author's credit,
+provide the source code of any distributed version, and release it under the
+same license.
 
-Toute version dérivée doit indiquer clairement qu'elle est dérivée
-d'Onechess, créé par ovnice.
+Any derived version must clearly state that it is derived from Onechess,
+created by ovnice.
 
-Composants tiers : Fathom (`engine/fathom/`), licence MIT, voir
+Third-party components: Fathom (`engine/fathom/`), MIT license, see
 `engine/fathom/LICENSE`.
