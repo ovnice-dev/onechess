@@ -47,7 +47,7 @@ matchmaking:
   allow_matchmaking: true          # defie d'autres bots quand il est inactif
   allow_during_games: false
   challenge_variant: "standard"
-  challenge_timeout: 30            # apres 30 minutes sans partie
+  challenge_timeout: 10            # apres 10 minutes sans partie
   challenge_initial_time: [60, 180, 300]
   challenge_increment: [1, 2, 3]
   opponent_rating_difference: 300
