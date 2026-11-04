@@ -1200,8 +1200,12 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
         && beta > VALUE_TB_LOSS_IN_MAX_PLY)
     {
+        // NmpOddThread (Stockfish, 2026) : les fils impairs reduisent le coup
+        // nul d'un pli de moins, pour que les fils n'explorent pas tous le
+        // meme arbre. Sans effet a un seul fil.
         const Depth R = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR)
-                      + depth / NmpDepthDiv + NmpBaseReduction;
+                      + depth / NmpDepthDiv + NmpBaseReduction
+                      - (NmpOddThread && (thisThread->index() & 1));
 
         ss->currentMove         = Move::null();
         ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][SQ_A1];

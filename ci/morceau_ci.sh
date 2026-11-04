@@ -40,8 +40,13 @@ echo "signature Linux $n, attendue $attendu"
 o1=""; for o in ${OPT1:-}; do o1="$o1 --opt1 $o"; done
 o2=""; for o in ${OPT2:-}; do o2="$o2 --opt2 $o"; done
 NC=$(nproc)
+# Moteurs a plusieurs fils (option Threads=N) : N coeurs par moteur
+TH=1
+for o in ${OPT1:-} ${OPT2:-}; do
+    case "$o" in Threads=*) t=${o#Threads=}; [ "$t" -gt "$TH" ] && TH=$t;; esac
+done
 if [[ "$MODE" == tc:* ]]; then
-    CAD="--tc ${MODE#tc:} --hash 64"; NC=$(( NC > 1 ? NC / 2 : 1 ))
+    CAD="--tc ${MODE#tc:} --hash 64"; NC=$(( NC / (2 * TH) )); [ "$NC" -lt 1 ] && NC=1
 else
     CAD="--nodes1 100000 --nodes2 100000 --hash 32"
 fi

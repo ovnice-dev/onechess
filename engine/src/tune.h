@@ -123,7 +123,7 @@
     X(R6Margin,                       0,     0,   400) \
     X(PcAdapt,                        0,     0,   400) \
     X(FutCorr,                        0,     0,   256) \
-    X(FirstLmr,                       0,     0,    10)     X(RazorAll,                       0,     0,   700) \
+    X(FirstLmr,                       0,     0,    10)     X(RazorAll,                       0,     0,   700)     X(NmpOddThread,                   0,     0,     1) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
