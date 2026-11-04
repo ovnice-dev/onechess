@@ -1,4 +1,7 @@
 #include "misc.h"
+#include <streambuf>
+#include <iostream>
+#include <fstream>
 
 #include <cstdlib>
 #include <cstring>
@@ -89,5 +92,56 @@ void* aligned_large_pages_alloc(std::size_t allocSize) {
 void aligned_large_pages_free(void* mem) { std::free(mem); }
 
 #endif
+
+
+// Flux en "T" : tout ce qui passe par cin ou cout est aussi ecrit dans le
+// fichier, precede de << (entree) ou >> (sortie). Repris de Stockfish.
+namespace {
+struct Tie: public std::streambuf {
+    Tie(std::streambuf* b, std::streambuf* l) : buf(b), logBuf(l) {}
+    int sync() override { return logBuf->pubsync(), buf->pubsync(); }
+    int overflow(int c) override { return log(buf->sputc(char(c)), ">> "); }
+    int underflow() override { return buf->sgetc(); }
+    int uflow() override { return log(buf->sbumpc(), "<< "); }
+    std::streambuf *buf, *logBuf;
+    int log(int c, const char* prefix) {
+        static int last = '\n';
+        if (last == '\n')
+            logBuf->sputn(prefix, 3);
+        return last = logBuf->sputc(char(c));
+    }
+};
+
+struct Logger {
+    std::ofstream file;
+    Tie           in, out;
+    Logger() : in(std::cin.rdbuf(), file.rdbuf()), out(std::cout.rdbuf(), file.rdbuf()) {}
+    ~Logger() { start(""); }
+    void start(const std::string& fname) {
+        if (file.is_open())
+        {
+            std::cout.rdbuf(out.buf);
+            std::cin.rdbuf(in.buf);
+            file.close();
+        }
+        if (!fname.empty())
+        {
+            file.open(fname, std::ifstream::out);
+            if (!file.is_open())
+            {
+                std::cerr << "Impossible d'ouvrir " << fname << std::endl;
+                return;
+            }
+            std::cin.rdbuf(&in);
+            std::cout.rdbuf(&out);
+        }
+    }
+};
+}  // namespace
+
+void start_logger(const std::string& fname) {
+    static Logger l;
+    l.start(fname);
+}
 
 }  // namespace one

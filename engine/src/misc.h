@@ -55,4 +55,7 @@ void  aligned_large_pages_free(void* mem);
 
 std::string engine_info();
 
+// Debug Log File : recopie l'entree et la sortie UCI dans un fichier (vide = arret).
+void start_logger(const std::string& fname);
+
 }  // namespace one

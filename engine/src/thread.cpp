@@ -195,6 +195,13 @@ void ThreadPool::wait_for_helpers() const {
         threads[i]->wait_for_search_finished();
 }
 
+std::uint64_t ThreadPool::tb_hits() const {
+    std::uint64_t sum = 0;
+    for (Thread* th : threads)
+        sum += th->tbHits.load(std::memory_order_relaxed);
+    return sum;
+}
+
 std::uint64_t ThreadPool::nodes_searched() const {
     std::uint64_t sum = 0;
     for (Thread* th : threads)

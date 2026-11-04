@@ -48,6 +48,7 @@ class Thread {
 
     std::atomic<std::uint64_t> nodes{0};
     std::atomic<std::uint64_t> tbHits{0};   // sondes Syzygy reussies
+    std::size_t                pvIdx = 0;   // ligne MultiPV en cours de recherche
 
     // ---------------------------------------------------------- historiques
     ButterflyHistory      mainHistory;
@@ -92,6 +93,7 @@ class ThreadPool {
     Thread* best_thread() const;
 
     std::uint64_t nodes_searched() const;
+    std::uint64_t tb_hits() const;
 
     std::size_t size() const { return threads.size(); }
 

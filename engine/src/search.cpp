@@ -441,8 +441,10 @@ void Thread::iterative_deepening() {
     // Le filtre des tables de finales a la racine est fait une fois pour tous
     // les threads, dans ThreadPool::start_thinking().
 
-    const int multiPV = 1;
-    (void) multiPV;
+    // MultiPV : les lignes 0 .. multiPV-1 sont cherchees l'une apres l'autre a
+    // chaque profondeur, chacune en excluant les coups des lignes precedentes.
+    const std::size_t multiPV =
+      std::min(std::size_t(int(Options["MultiPV"])), rootMoves.size());
 
     while (++rootDepth < MAX_PLY && !Threads.stop
            && !(Limits.depth && is_main() && rootDepth > Limits.depth))
@@ -452,11 +454,13 @@ void Thread::iterative_deepening() {
         for (RootMove& rm : rootMoves)
             rm.previousScore = rm.score;
 
+        for (pvIdx = 0; pvIdx < multiPV && !Threads.stop; ++pvIdx)
+        {
         selDepth = 0;
 
         // ------------------------------------------------- fenetre d'aspiration
         Value delta = VALUE_ZERO;
-        Value avg   = rootMoves[0].averageScore;
+        Value avg   = rootMoves[pvIdx].averageScore;
 
         if (rootDepth >= AspirationMinDepth && avg != -VALUE_INFINITE)
         {
@@ -482,7 +486,7 @@ void Thread::iterative_deepening() {
             rootDelta = beta - alpha;
             bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
-            std::stable_sort(rootMoves.begin(), rootMoves.end());
+            std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 
             if (Threads.stop)
                 break;
@@ -506,6 +510,13 @@ void Thread::iterative_deepening() {
 
             assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
         }
+
+        // Les lignes deja trouvees restent triees entre elles
+        std::stable_sort(rootMoves.begin(), rootMoves.begin() + pvIdx + 1);
+        }
+        pvIdx = 0;
+        if (multiPV > 1)
+            bestValue = rootMoves[0].score;
 
         bestMoveChanges /= 2.0;
 
@@ -964,7 +975,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     const bool  ttHit = ss->ttHit;
     const Value ttValue =
       ttHit ? value_from_tt(tte->value(), ss->ply, pos.rule50_count()) : VALUE_NONE;
-    const Move ttMove = rootNode ? thisThread->rootMoves[0].pv[0]
+    const Move ttMove = rootNode ? thisThread->rootMoves[thisThread->pvIdx].pv[0]
                       : ttHit    ? tte->move()
                                  : Move::none();
     ttCapture         = ttMove && pos.capture_stage(ttMove);
@@ -1312,7 +1323,8 @@ moves_loop:
 
         // A la racine, on ne joue que les coups demandes par l'interface
         if (rootNode
-            && !std::count(thisThread->rootMoves.begin(), thisThread->rootMoves.end(), move))
+            && !std::count(thisThread->rootMoves.begin() + thisThread->pvIdx,
+                           thisThread->rootMoves.end(), move))
             continue;
 
         ss->moveCount = ++moveCount;

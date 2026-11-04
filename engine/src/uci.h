@@ -38,6 +38,7 @@ class Option {
     std::string defaultValue, currentValue, type;
     int         min = 0, max = 0;
     std::size_t idx = 0;
+    bool        hidden = false;   // reglable par setoption, mais absent de la liste "uci"
     OnChange    on_change;
 };
 
@@ -51,6 +52,8 @@ void init(OptionsMap&);
 void loop(int argc, char* argv[]);
 
 std::string value(Value v);
+// Probabilites gain / nulle / perte (pour mille) d'une evaluation, pour UCI_ShowWDL
+std::string wdl(Value v);
 std::string square(Square s);
 std::string move(Move m, bool chess960);
 std::string pv(const Thread& th, Depth depth);

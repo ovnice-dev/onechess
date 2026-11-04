@@ -301,12 +301,24 @@ void UCI::init(OptionsMap& o) {
     // pour une analyse, jamais en partie.
     o["Syzygy50MoveRule"] << Option(true);
 
+    // Analyse : plusieurs meilleures lignes
+    o["MultiPV"] << Option(1, 1, 256);
+
+    // Probabilites gain / nulle / perte dans chaque ligne "info"
+    o["UCI_ShowWDL"] << Option(false);
+
+    // Copie de tout le dialogue UCI dans un fichier (vide = aucune)
+    o["Debug Log File"] << Option("", [](const Option& opt) { start_logger(std::string(opt)); });
+
     // Toutes les constantes de recherche, exposees pour le SPRT
+// Reglables par setoption (SPRT, SPSA), mais caches de la liste "uci" : une
+// interface n'a pas a montrer cent constantes internes.
 #define TUNABLE_OPTION(name, def, lo, hi)                          \
     o[#name] << Option(def, lo, hi, [](const Option& opt) {        \
         Tune::name = int(opt);                                     \
         Search::init();                                            \
-    });
+    });                                                            \
+    o[#name].hidden = true;
     TUNABLE_LIST(TUNABLE_OPTION)
 #undef TUNABLE_OPTION
 }
@@ -395,6 +407,8 @@ std::ostream& operator<<(std::ostream& os, const UCI::OptionsMap& om) {
             if (it.second.idx == idx)
             {
                 const UCI::Option& o = it.second;
+                if (o.hidden)
+                    break;
                 os << "\noption name " << it.first << " type " << o.type;
 
                 if (o.type == "check" || o.type == "combo")
@@ -465,22 +479,55 @@ std::string UCI::value(Value v) {
     return ss.str();
 }
 
+// Modele gain / nulle / perte, ajuste par les moindres carres sur nos positions
+// etiquetees (resultat de la partie contre l'evaluation, voir JOURNAL 4-11) :
+// P(gain) = 1 / (1 + exp(-(v - WdlA) / WdlB)), P(perte) symetrique.
+std::string UCI::wdl(Value v) {
+    constexpr double WdlA = 152, WdlB = 101;   // 400 000 positions, nos donnees et l autojeu public
+    const auto       p    = [&](double x) { return 1.0 / (1.0 + std::exp(-(x - WdlA) / WdlB)); };
+    const int        w    = int(std::lround(1000.0 * p(double(v))));
+    const int        l    = int(std::lround(1000.0 * p(-double(v))));
+    std::stringstream ss;
+    ss << " wdl " << w << " " << std::max(0, 1000 - w - l) << " " << l;
+    return ss.str();
+}
+
 std::string UCI::pv(const Thread& th, Depth depth) {
     std::stringstream ss;
 
     const TimePoint     elapsed = Time.elapsed() + 1;
     const std::uint64_t nodes   = Threads.nodes_searched();
-    const auto&         rm      = th.rootMoves[0];
+    const std::uint64_t tbHits  = Threads.tb_hits();
+    const std::size_t   multiPV =
+      std::min(std::size_t(int(Options["MultiPV"])), th.rootMoves.size());
+    const bool showWdl = bool(Options["UCI_ShowWDL"]);
 
-    if (rm.score == -VALUE_INFINITE)
-        return "";
+    bool first = true;
+    for (std::size_t i = 0; i < multiPV; ++i)
+    {
+        const auto& rm = th.rootMoves[i];
+        // Une ligne pas encore cherchee a cette profondeur garde son score precedent
+        const bool  updated = rm.score != -VALUE_INFINITE;
+        const Value v       = updated ? rm.score : rm.previousScore;
+        if (v == -VALUE_INFINITE)
+            continue;
 
-    ss << "info depth " << depth << " seldepth " << rm.selDepth << " score " << UCI::value(rm.score)
-       << " nodes " << nodes << " nps " << nodes * 1000 / elapsed << " hashfull " << TT.hashfull()
-       << " time " << elapsed << " pv";
+        if (!first)
+            ss << "\n";
+        first = false;
+        ss << "info depth " << (updated ? depth : std::max(1, depth - 1)) << " seldepth "
+           << rm.selDepth;
+        if (multiPV > 1)
+            ss << " multipv " << i + 1;
+        ss << " score " << UCI::value(v);
+        if (showWdl && std::abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
+            ss << UCI::wdl(v);
+        ss << " nodes " << nodes << " nps " << nodes * 1000 / elapsed << " hashfull "
+           << TT.hashfull() << " tbhits " << tbHits << " time " << elapsed << " pv";
 
-    for (Move m : rm.pv)
-        ss << " " << UCI::move(m, th.rootPos.is_chess960());
+        for (Move m : rm.pv)
+            ss << " " << UCI::move(m, th.rootPos.is_chess960());
+    }
 
     return ss.str();
 }
