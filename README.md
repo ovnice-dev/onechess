@@ -31,6 +31,42 @@ Placer `onechess.exe` et `onechess.nnue` dans le même dossier, puis ajouter
 Chess…). Le réseau est cherché à côté de l'exécutable ; sans lui, le moteur
 joue avec une évaluation simple, beaucoup plus faible.
 
+## Options UCI
+
+| Option | Rôle |
+|---|---|
+| `Hash`, `Threads`, `Clear Hash` | table de transposition (Mo), fils de recherche |
+| `Move Overhead` | marge de temps par coup (ms), pour les interfaces lentes |
+| `EvalFile` | réseau NNUE (par défaut `onechess.nnue`, cherché à côté de l'exécutable) |
+| `Ponder`, `UCI_Chess960` | réflexion sur le temps adverse, échecs aléatoires Fischer |
+| `SyzygyPath`, `SyzygyProbeDepth`, `SyzygyProbeLimit`, `Syzygy50MoveRule` | tables de finales Syzygy |
+| `MultiPV` | nombre de meilleures lignes affichées (analyse) |
+| `UCI_ShowWDL` | probabilités gain / nulle / perte dans chaque ligne `info` |
+| `Debug Log File` | copie de tout le dialogue UCI dans un fichier |
+
+Les constantes internes de la recherche restent réglables par `setoption`
+(tests et réglages), mais ne sont pas listées par `uci`.
+
+## Quel binaire choisir
+
+| Binaire | Processeurs |
+|---|---|
+| `onechess-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants |
+| `onechess-avx2.exe` | AMD Zen 1 et Zen 2 |
+| `onechess-sse41.exe` | processeurs sans AVX2 (lent) |
+
+Les trois jouent exactement la même partie (`bench 12` identique) ; seule la
+vitesse change. Ils se construisent par `bash tools/diffusion.sh`.
+
+## Données d'entraînement
+
+- Parties de la base Lichess Elite, positions étiquetées par Stockfish.
+- Autojeu de Stockfish 19 produit pour ce projet.
+- Autojeu public de Stockfish à 5 000 nœuds (`official-stockfish/master-binpacks`
+  sur Hugging Face, licence ODbL), pour les réseaux à venir.
+- Lecture des fichiers binpack : code de `nnue-pytorch` (GPLv3), dans
+  `tools/binpack/lib/`.
+
 ## Licence
 
 Copyright (C) 2026 ovnice.
