@@ -48,8 +48,8 @@ matchmaking:
   allow_during_games: false
   challenge_variant: "standard"
   challenge_timeout: 10            # apres 10 minutes sans partie
-  challenge_initial_time: [60, 180, 300]
-  challenge_increment: [1, 2, 3]
+  challenge_initial_time: [180, 300]   # blitz : beaucoup de bots refusent le bullet
+  challenge_increment: [2, 3]
   opponent_rating_difference: 300
   rating_preference: "none"
   challenge_mode: "rated"
