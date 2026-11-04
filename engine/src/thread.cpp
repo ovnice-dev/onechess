@@ -131,17 +131,25 @@ void ThreadPool::start_thinking(Position&                 pos,
     // On ne garde que ce coup -- pour TOUS les threads : avant le 20-10 seul
     // le principal etait filtre, et un helper plus profond pouvait faire jouer
     // un autre coup.
+    Search::RootTbScore = VALUE_NONE;
     if (Syzygy::max_pieces()
         && popcount(pos.pieces()) <= std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"])))
     {
-        int        wdl    = 0;
-        const Move tbMove = Syzygy::probe_root(pos, bool(Options["Syzygy50MoveRule"]), &wdl);
+        int        wdl = 0, dtz = 0;
+        const Move tbMove = Syzygy::probe_root(pos, bool(Options["Syzygy50MoveRule"]), &wdl, &dtz);
         const auto it     = std::find(rootMoves.begin(), rootMoves.end(), tbMove);
         if (tbMove != Move::none() && it != rootMoves.end())
         {
             const Search::RootMove keep = *it;
             rootMoves.clear();
             rootMoves.push_back(keep);
+
+            // Score a afficher (affichage seulement : la recherche n'en sait rien)
+            const Value d = Value(std::min(dtz, MAX_PLY - 1));
+            // wdl de Fathom : 4 gain, 3 gain maudit, 2 nulle, 1 perte benie, 0 perte
+            Search::RootTbScore = wdl == 4 ? Value(VALUE_TB - d)
+                                : wdl == 0 ? Value(-VALUE_TB + d)
+                                           : VALUE_DRAW;
         }
     }
 

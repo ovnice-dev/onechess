@@ -44,7 +44,8 @@ const std::string& path();
 bool probe_wdl(const Position& pos, int ply, bool use50MoveRule, Value* v);
 
 // Sonde DTZ a la racine. Rend le meilleur coup et le resultat, ou MOVE_NONE.
-Move probe_root(const Position& pos, bool use50MoveRule, int* wdl);
+// dtz (facultatif) recoit la distance a la remise a zero des 50 coups.
+Move probe_root(const Position& pos, bool use50MoveRule, int* wdl, int* dtz = nullptr);
 
 }  // namespace Syzygy
 }  // namespace one

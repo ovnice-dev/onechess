@@ -113,7 +113,7 @@ bool probe_wdl(const Position& pos, int ply, bool use50MoveRule, Value* v) {
     return true;
 }
 
-Move probe_root(const Position& pos, bool use50MoveRule, int* wdl) {
+Move probe_root(const Position& pos, bool use50MoveRule, int* wdl, int* dtz) {
     if (!Loaded || popcount(pos.pieces()) > int(TB_LARGEST))
         return Move::none();
 
@@ -127,6 +127,8 @@ Move probe_root(const Position& pos, bool use50MoveRule, int* wdl) {
         return Move::none();
 
     *wdl = int(TB_GET_WDL(r));
+    if (dtz)
+        *dtz = int(TB_GET_DTZ(r));
     if (!use50MoveRule)
     {
         if (*wdl == TB_CURSED_WIN)

@@ -32,6 +32,7 @@ TUNABLE_LIST(TUNABLE_DEFINE)
 
 namespace Search {
 LimitsType        Limits;
+Value             RootTbScore = VALUE_NONE;
 std::atomic<bool> Ponder{false}, StopOnPonderhit{false};
 }
 

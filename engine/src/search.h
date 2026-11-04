@@ -81,6 +81,11 @@ struct LimitsType {
 
 extern LimitsType Limits;
 
+// Racine dans les tables : score a afficher a la place de celui de la recherche
+// (gain ou perte comptes en demi-coups jusqu'a la remise a zero, ou nulle).
+// VALUE_NONE si la racine n'est pas dans les tables.
+extern Value RootTbScore;
+
 // Ponder : pendant "go ponder", la recherche ne s'arrete jamais d'elle-meme ;
 // une decision d'arret prise pendant ce temps est remise au "ponderhit".
 extern std::atomic<bool> Ponder, StopOnPonderhit;

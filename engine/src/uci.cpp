@@ -508,7 +508,12 @@ std::string UCI::pv(const Thread& th, Depth depth) {
         const auto& rm = th.rootMoves[i];
         // Une ligne pas encore cherchee a cette profondeur garde son score precedent
         const bool  updated = rm.score != -VALUE_INFINITE;
-        const Value v       = updated ? rm.score : rm.previousScore;
+        Value       v       = updated ? rm.score : rm.previousScore;
+        // Racine dans les tables : on annonce leur verdict, sauf si la
+        // recherche a deja trouve un mat (plus precis que la distance DTZ).
+        if (Search::RootTbScore != VALUE_NONE && v != -VALUE_INFINITE
+            && std::abs(v) < VALUE_MATE_IN_MAX_PLY)
+            v = Search::RootTbScore;
         if (v == -VALUE_INFINITE)
             continue;
 
