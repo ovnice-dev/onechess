@@ -6,9 +6,7 @@
 
 #if defined(_WIN32)
     #include <intrin.h>
-#else
-    #include <xmmintrin.h>
-#endif
+#endif   // ailleurs : __builtin_prefetch, portable (x86 comme ARM)
 
 namespace one {
 
