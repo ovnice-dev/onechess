@@ -9,6 +9,12 @@ on:
       profondeur:
         description: "profondeur du bench"
         default: "13"
+      extra:
+        description: "options de compilation (ex. -DONE_HIDDEN_SIZE=1024)"
+        default: ""
+      reseau:
+        description: "reseau a charger"
+        default: "reseau/onechess.nnue"
 
 jobs:
   profil:
