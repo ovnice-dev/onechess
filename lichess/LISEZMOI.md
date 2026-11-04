@@ -16,3 +16,10 @@ Ce que l'utilisateur doit faire lui-même (création de compte et jeton) :
 5. Lancer : `python lichess-bot.py` (Python 3.11 ou plus récent).
 
 Le jeton est un secret : ne jamais le publier ni le copier dans le dépôt.
+
+## Tournois (automatique)
+
+`tournois.py`, lancé toutes les 5 minutes (minuterie systemd), inscrit le bot
+aux tournois à venir de ses équipes de bots, lit leur règlement et coupe le
+livre ou les tables 15 minutes avant un tournoi qui les interdit, puis remet
+tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
