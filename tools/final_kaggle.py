@@ -46,6 +46,10 @@ def main():
     ap.add_argument('--train', default='--hidden 1024 --epochs 60')
     ap.add_argument('--epoch-files', type=int, default=60)
     ap.add_argument('--apres', default='')
+    # quota GPU : 30 h par semaine (renouvele le samedi d'apres nos releves), soit 2 sessions
+    # de ~10 h 30 ; les sessions 1-2 partent apres --pas-avant, les 3-4 une semaine plus tard, etc.
+    ap.add_argument('--pas-avant', default='2026-11-07T03:00')
+    ap.add_argument('--par-semaine', type=int, default=2)
     ap.add_argument('--limite', type=int, default=10 * 3600)   # + ~30 min de preparation, + 1 epoque au plus
     a = ap.parse_args()
 
@@ -79,6 +83,11 @@ root = os.path.dirname(bins[0])""", "root = '/tmp/donnees'")
         if apres:
             with open(os.path.join(d, 'apres'), 'w') as f:
                 f.write(apres + '\n')
+        if a.pas_avant:
+            import datetime
+            t = datetime.datetime.fromisoformat(a.pas_avant) + datetime.timedelta(weeks=(k - 1) // a.par_semaine)
+            with open(os.path.join(d, 'pas_avant'), 'w') as f:
+                f.write(t.strftime('%Y-%m-%dT%H:%M') + '\n')
         print('ecrit', d)
 
 
