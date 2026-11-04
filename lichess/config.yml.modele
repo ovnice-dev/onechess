@@ -1,0 +1,44 @@
+# Configuration de lichess-bot pour Onechess (https://github.com/lichess-bot-devs/lichess-bot).
+# Copier ce fichier en config.yml dans le dossier de lichess-bot, puis remplacer le jeton.
+# Ne JAMAIS publier config.yml : il contient le jeton du compte.
+token: "JETON_A_REMPLIR"
+url: "https://lichess.org/"
+
+engine:
+  dir: "./engines/"                 # y mettre onechess.exe (le bon binaire) et onechess.nnue
+  name: "onechess-bmi2.exe"         # ou onechess-avx2.exe sur AMD Zen 1-2
+  protocol: "uci"
+  ponder: true
+  uci_options:
+    Move Overhead: 100              # marge pour le reseau (ms)
+    Threads: 4                      # selon la machine qui fait tourner le bot
+    Hash: 512
+    UCI_ShowWDL: true
+    # SyzygyPath: "./syzygy/"       # si des tables de finales sont installees
+  polyglot:
+    enabled: false                  # lichess-bot peut jouer un livre ; Onechess n'en a pas besoin
+  draw_or_resign:
+    resign_enabled: true
+    resign_score: -1000
+    resign_moves: 3
+    offer_draw_enabled: true
+    offer_draw_score: 0
+    offer_draw_moves: 10
+    offer_draw_pieces: 10
+
+challenge:
+  concurrency: 1
+  variants: [standard, chess960]
+  time_controls: [bullet, blitz, rapid, classical]
+  modes: [casual, rated]
+  accept_bot: true
+  min_base: 0
+  max_base: 1800
+  min_increment: 0
+  max_increment: 20
+
+greeting:
+  hello: "Bonjour ! Je suis {me}, un moteur d'echecs libre (GPL-3.0). Bonne partie !"
+  goodbye: "Merci pour la partie !"
+  hello_spectators: "Je suis {me}, un moteur d'echecs libre."
+  goodbye_spectators: "Merci d'avoir regarde !"

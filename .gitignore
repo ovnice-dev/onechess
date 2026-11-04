@@ -15,6 +15,7 @@
 !/engine/build.sh
 
 !/tools/
+!/lichess/
 /tools/*.avant*
 /tools/__pycache__/
 
