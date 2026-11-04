@@ -13,6 +13,6 @@ Ce que l'utilisateur doit faire lui-même (création de compte et jeton) :
    puis `pip install -r requirements.txt`), copier `config.yml.modele` en
    `config.yml`, y mettre le jeton, et placer l'exécutable et `onechess.nnue`
    dans `engines/`.
-5. Lancer : `python lichess-bot.py`.
+5. Lancer : `python lichess-bot.py` (Python 3.11 ou plus récent).
 
 Le jeton est un secret : ne jamais le publier ni le copier dans le dépôt.
