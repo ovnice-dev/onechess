@@ -191,6 +191,19 @@ Value corrected_eval(Value v, const Thread* th, const Position& pos, const Stack
     return std::clamp(v, Value(VALUE_TB_LOSS_IN_MAX_PLY + 1), Value(VALUE_TB_WIN_IN_MAX_PLY - 1));
 }
 
+// Les tables de correction sont lues juste apres l'evaluation du reseau, et
+// leurs lectures sont des defauts de cache : on les demande des l'entree du
+// noeud, elles arrivent pendant que le reseau calcule.
+inline void prefetch_corr(const Position& pos, const Thread* th, const Stack* ss) {
+    const Color us = pos.side_to_move();
+    prefetch(&th->correctionHistory[us][correction_index(pawn_corr_key(pos))]);
+    prefetch(&th->nonPawnCorrection[WHITE][us][correction_index(pos.non_pawn_key(WHITE))]);
+    prefetch(&th->nonPawnCorrection[BLACK][us][correction_index(pos.non_pawn_key(BLACK))]);
+    const Move m = (ss - 1)->currentMove;
+    if (m.is_ok())
+        prefetch(&(*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]);
+}
+
 // Un coup est juge sur la reponse qu'il apporte au coup precedent (pli 1),
 // mais aussi sur la facon dont il prolonge notre propre plan (plis 2, 4, 6).
 void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
@@ -736,6 +749,8 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
 
     posKey = pos.key();
     tte    = TT.probe(posKey, ttHit);
+    if (!ss->inCheck)
+        prefetch_corr(pos, thisThread, ss);
     ss->ttHit = ttHit;
     const Value ttValue = ttHit ? value_from_tt(tte->value(), ss->ply, pos.rule50_count())
                                 : VALUE_NONE;
@@ -993,6 +1008,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     posKey       = pos.key();
 
     TTEntry*    tte   = TT.probe(posKey, ss->ttHit);
+    if (!ss->inCheck)
+        prefetch_corr(pos, thisThread, ss);
     const bool  ttHit = ss->ttHit;
     const Value ttValue =
       ttHit ? value_from_tt(tte->value(), ss->ply, pos.rule50_count()) : VALUE_NONE;

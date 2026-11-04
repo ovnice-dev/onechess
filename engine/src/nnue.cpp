@@ -388,8 +388,12 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
 
     for (Color p : {WHITE, BLACK})
     {
-        const bool update = (p == WHITE ? doWhite : doBlack) && dp.count > 0;
-        if (!update)
+        // Une perspective qui sera recalculee en entier (changement de bucket
+        // ou d'expert) n'a rien a recevoir : sa copie serait ecrasee, et les
+        // noeuds intermediaires ne sont alors pas declares valides.
+        if (!(p == WHITE ? doWhite : doBlack))
+            continue;
+        if (dp.count == 0)
         {
             std::memcpy(dst.v[p], src.v[p], sizeof(dst.v[p]));
             continue;

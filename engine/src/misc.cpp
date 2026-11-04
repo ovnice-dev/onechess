@@ -1,4 +1,7 @@
 #include "misc.h"
+#if defined(__linux__)
+    #include <sys/mman.h>
+#endif
 #include <streambuf>
 #include <iostream>
 #include <fstream>
@@ -84,9 +87,16 @@ void aligned_large_pages_free(void* mem) {
 #else
 
 void* aligned_large_pages_alloc(std::size_t allocSize) {
-    constexpr std::size_t alignment = 4096;
+    // Grandes pages transparentes (Linux) : la table et les poids du reseau
+    // depassent largement ce que couvrent les pages de 4 Ko dans le TLB.
+    constexpr std::size_t alignment = 2 * 1024 * 1024;
     std::size_t           size      = ((allocSize + alignment - 1) / alignment) * alignment;
-    return std::aligned_alloc(alignment, size);
+    void*                 mem       = std::aligned_alloc(alignment, size);
+    #if defined(MADV_HUGEPAGE)
+    if (mem)
+        madvise(mem, size, MADV_HUGEPAGE);
+    #endif
+    return mem;
 }
 
 void aligned_large_pages_free(void* mem) { std::free(mem); }
