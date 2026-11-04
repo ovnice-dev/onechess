@@ -28,3 +28,6 @@
 !/reseau/
 jouer/
 tools/binpack/*.exe
+
+# jeton du bot Lichess
+lichess/config.yml
