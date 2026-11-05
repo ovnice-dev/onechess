@@ -1,6 +1,6 @@
-# Morceau de SPRT sur processeur Kaggle : FutCorrT, graine 900003.
+# Morceau de SPRT sur processeur Kaggle : R6MarginT, graine 900101.
 import glob, os, shutil, signal, subprocess, sys, time
-NOM, OPT1, OPT2, MODE, GRAINE = 'FutCorrT', 'FutCorr=32', '', 'tc:10+0.1', 900003
+NOM, OPT1, OPT2, MODE, GRAINE = 'R6MarginT', 'R6Margin=100', '', 'tc:10+0.1', 900101
 SIGNATURE = 1130532
 LIMITE = 11 * 3600            # arret propre avant les 12 h de la session
 T0 = time.time()
@@ -27,7 +27,7 @@ if n != SIGNATURE:
 nc = max(1, (os.cpu_count() or 4) // 2)      # au temps : une partie par coeur physique
 o1 = ' '.join(f'--opt1 {o}' for o in OPT1.split())
 o2 = ' '.join(f'--opt2 {o}' for o in OPT2.split())
-cmd = (f'ulimit -s 65536; PYTHONPATH={w}/pylib exec python -u arena.py --e1 ./onechess --e2 ./onechess '
+cmd = (f'ulimit -s 65536; PYTHONPATH={w}/pychess.whl:{w}/pylib exec python -u arena.py --e1 ./onechess --e2 ./onechess '
        f'--name1 {NOM} --name2 Reference --opt1 EvalFile=onechess.nnue --opt2 EvalFile=onechess.nnue '
        f'{o1} {o2} --tc {MODE[3:]} --hash 64 --games 100000 --concurrency {nc} --seed {GRAINE} '
        f'--quiet --openings uho.epd --state /kaggle/working/{NOM}-kaggle-{GRAINE}.state')

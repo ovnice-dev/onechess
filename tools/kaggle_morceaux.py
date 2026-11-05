@@ -47,7 +47,7 @@ if n != SIGNATURE:
 nc = max(1, (os.cpu_count() or 4) // 2)      # au temps : une partie par coeur physique
 o1 = ' '.join(f'--opt1 {{o}}' for o in OPT1.split())
 o2 = ' '.join(f'--opt2 {{o}}' for o in OPT2.split())
-cmd = (f'ulimit -s 65536; PYTHONPATH={{w}}/pylib exec python -u arena.py --e1 ./onechess --e2 ./onechess '
+cmd = (f'ulimit -s 65536; PYTHONPATH={{w}}/pychess.whl:{{w}}/pylib exec python -u arena.py --e1 ./onechess --e2 ./onechess '
        f'--name1 {{NOM}} --name2 Reference --opt1 EvalFile=onechess.nnue --opt2 EvalFile=onechess.nnue '
        f'{{o1}} {{o2}} --tc {{MODE[3:]}} --hash 64 --games 100000 --concurrency {{nc}} --seed {{GRAINE}} '
        f'--quiet --openings uho.epd --state /kaggle/working/{{NOM}}-kaggle-{{GRAINE}}.state')
@@ -72,15 +72,16 @@ def main():
     ap.add_argument('--mode', default='tc:10+0.1')
     ap.add_argument('--apres', nargs='*', default=[])
     ap.add_argument('--graine', type=int, default=900000)
+    ap.add_argument('--suffixe', default='', help='ex. -2 : nouveaux noyaux (un noyau Kaggle ne se relance pas)')
     a = ap.parse_args()
     signature = int(open(os.path.join(RACINE, 'ci', 'signature.txt')).read().strip())
     for k, (nom, opts) in enumerate(a.test):
-        d = os.path.join(RACINE, 'ci', 'kaggle_nuit', f'm-{nom.lower()}')
+        d = os.path.join(RACINE, 'ci', 'kaggle_nuit', f'm-{nom.lower()}{a.suffixe}')
         os.makedirs(d, exist_ok=True)
         graine = a.graine + k
         with open(os.path.join(d, 'run.py'), 'w', encoding='utf-8', newline='\n') as f:
             f.write(RUN.format(nom=nom, opt1=opts, opt2='', mode=a.mode, graine=graine, signature=signature))
-        meta = {"id": f"ovnice/onechess-m-{nom.lower()}", "title": f"onechess-m-{nom.lower()}",
+        meta = {"id": f"ovnice/onechess-m-{nom.lower()}{a.suffixe}", "title": f"onechess-m-{nom.lower()}{a.suffixe}",
                 "code_file": "run.py", "language": "python", "kernel_type": "script", "is_private": True,
                 "enable_gpu": False, "enable_internet": False, "dataset_sources": ["ovnice/onechess-code"],
                 "competition_sources": [], "kernel_sources": []}
