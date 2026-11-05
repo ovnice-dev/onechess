@@ -1,9 +1,11 @@
 """Cadences des defis d'OnechessBot (toutes les minutes).
 
 lichess-bot tire la cadence de ses defis au hasard dans une liste. Ici, on
-passe a la categorie suivante (bullet -> blitz -> rapide -> bullet...) quand
+passe a la categorie suivante (blitz -> rapide -> blitz...) quand
 10 defis de suite n'ont donne aucune partie ; une partie jouee garde la
-categorie. Le changement redemarre lichess-bot (2 minutes avant le defi suivant).
+categorie. Le changement redemarre lichess-bot.
+Pas de bullet : Lichess limite un bot a 100 parties par jour contre des bots,
+des parties plus longues etalent ce quota sur la journee.
 """
 import json
 import os
@@ -16,8 +18,7 @@ CFG = os.path.join(ICI, "lichess-bot", "config.yml")
 ETAT = os.path.join(ICI, "categories_etat.json")
 JOURNAL = os.path.join(ICI, "categories.log")
 ESSAIS = 10
-CATEGORIES = [("bullet", [60, 120], [1, 2]),
-              ("blitz", [180, 300], [2, 3]),
+CATEGORIES = [("blitz", [180, 300], [2, 3]),
               ("rapide", [600, 900], [5, 10])]
 
 

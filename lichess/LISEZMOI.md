@@ -27,5 +27,6 @@ tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
 ## Cadences des défis (automatique)
 
 `categories.py`, lancé chaque minute, fait tourner la cadence des défis
-automatiques : bullet, puis blitz, puis rapide, dès que 10 défis de suite n'ont
-donné aucune partie. La catégorie qui donne des parties est gardée.
+automatiques : blitz, puis rapide, dès que 10 défis de suite n'ont
+donné aucune partie. La catégorie qui donne des parties est gardée. Pas de bullet : Lichess limite
+un bot à 100 parties par jour contre d'autres bots.
