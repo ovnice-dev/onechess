@@ -24,6 +24,13 @@ aux tournois à venir de ses équipes de bots, lit leur règlement et coupe le
 livre ou les tables (et arrete les defis) 30 minutes avant un tournoi, puis remet
 tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
 
+## Mise à jour du moteur (automatique)
+
+`maj_bot.py`, lancé toutes les heures, regarde la dernière release GitHub
+(étiquette, `onechess.nnue`, `signature.txt`), compile le moteur à cette
+étiquette, vérifie la signature `bench 12`, attend la fin de la partie en cours
+et redémarre lichess-bot (qui garde son moteur d'une partie à l'autre).
+
 ## Cadences des défis (automatique)
 
 `categories.py`, lancé chaque minute, fait tourner la cadence des défis
