@@ -5,6 +5,8 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #ifdef _WIN32
     #ifndef NOMINMAX
@@ -1059,6 +1061,38 @@ void pairmul_l1(const Accumulator& acc, Color stm, int bucket, std::int32_t* x1)
             m &= m - 1;
         }
     }
+#ifdef ONE_NNZ_STATS
+    // Diagnostic (phase 10, A3) : part des groupes de 4 entrees non nuls et
+    // des octets non nuls, affichee a la sortie du programme.
+    {
+        struct Stats {
+            std::uint64_t groups = 0, nzGroups = 0, bytes = 0, nzBytes = 0;
+            ~Stats() {
+                std::fprintf(stderr, "NNZ groupes %.2f %% non nuls, octets %.2f %% non nuls (%llu evals)\n",
+                             100.0 * double(nzGroups) / double(groups ? groups : 1),
+                             100.0 * double(nzBytes) / double(bytes ? bytes : 1),
+                             (unsigned long long)(groups / (HIDDEN_SIZE / 4)));
+            }
+        };
+        static Stats st;
+        st.groups += HIDDEN_SIZE / 4;
+        st.nzGroups += std::uint64_t(n);
+        st.bytes += HIDDEN_SIZE;
+        for (int i = 0; i < HIDDEN_SIZE; ++i)
+            st.nzBytes += in[i] != 0;
+        // ONE_NNZ_DUMP=fichier : masques des entrees non nulles (1 bit par
+        // entree, les deux perspectives), pour tools/ftperm.py.
+        static std::FILE* dump = std::getenv("ONE_NNZ_DUMP") ? std::fopen(std::getenv("ONE_NNZ_DUMP"), "wb")
+                                                              : nullptr;
+        if (dump)
+        {
+            std::uint8_t bits[HIDDEN_SIZE / 8] = {};
+            for (int i = 0; i < HIDDEN_SIZE; ++i)
+                bits[i / 8] |= std::uint8_t((in[i] != 0) << (i % 8));
+            std::fwrite(bits, 1, sizeof(bits), dump);
+        }
+    }
+#endif
     const int     nr   = l1 / 8;
     const __m256i ones = _mm256_set1_epi16(1);
     __m256i       sum[MAX_L1 / 8];

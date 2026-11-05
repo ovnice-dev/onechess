@@ -47,7 +47,7 @@ matchmaking:
   allow_matchmaking: true          # defie d'autres bots quand il est inactif
   allow_during_games: false
   challenge_variant: "standard"
-  challenge_timeout: 2             # apres 2 minutes sans partie
+  challenge_timeout: 1             # apres 1 minute sans partie
   challenge_initial_time: [60, 120]   # categorie choisie par categories.py (bullet, blitz, rapide)
   challenge_increment: [1, 2]
   opponent_rating_difference: 300

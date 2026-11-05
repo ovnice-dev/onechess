@@ -470,6 +470,9 @@ class Perspective(nn.Module):
             if self.pairmul:
                 hh = self.hidden // 2
                 us, them = us[:, :hh] * us[:, hh:], them[:, :hh] * them[:, hh:]
+                # Penalite de parcimonie (phase 10, A3) : moyenne des produits,
+                # ajoutee a la perte par --act-l1 ; plus de zeros = l1 creuse.
+                self.act_pen = us.mean() + them.mean()
             x = self.h1(torch.cat([us, them], dim=1)).view(-1, self.out_buckets, self.l1)
             x = x.gather(1, ob.view(-1, 1, 1).expand(-1, 1, self.l1)).squeeze(1).clamp(0, 1)
             x = self.h2(x).view(-1, self.out_buckets, self.l2)
@@ -611,6 +614,10 @@ def main():
     ap.add_argument("--l1", type=int, default=0, help="couche cachee 1 (0 = aucune)")
     ap.add_argument("--l2", type=int, default=32, help="couche cachee 2 (si --l1)")
     ap.add_argument("--pairmul", type=int, default=0, help="1 = produit par paires avant l1")
+    ap.add_argument("--act-l1", type=float, default=0.0,
+                    help="penalite de parcimonie sur les produits par paires (phase 10)")
+    ap.add_argument("--stop-after", type=int, default=0,
+                    help="arreter apres cette epoque (le programme d'apprentissage garde --epochs)")
     ap.add_argument("--epoch-files", type=int, default=0,
                     help="--stream : fichiers par epoque (0 = tous) ; pour les tres gros lots")
     ap.add_argument("--ft-int8", type=int, default=0,
@@ -878,6 +885,8 @@ def main():
                 c, sq, stm_b, ob_b, _, tg_b = data.batch(sel)
                 iw, ib = feats(c, sq)
                 loss = ((torch.sigmoid(model(iw, ib, stm_b, ob_b)) - tg_b) ** 2).mean()
+                if args.act_l1:
+                    loss = loss + args.act_l1 * model.act_pen
 
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
@@ -923,6 +932,9 @@ def main():
             print(f"  epoque {epoch:3d}/{args.epochs}  perte {tot/steps:.5f}  "
                   f"val {vloss:.5f}  erreur {cp_err:6.1f} cp  "
                   f"({time.time()-t0:.0f} s)", flush=True)
+        if args.stop_after and epoch >= args.stop_after:
+            print(f"arret apres l'epoque {epoch} (--stop-after)", flush=True)
+            break
 
     # reprise d'un point deja a la fin : aucune epoque jouee ici, seul l'export reste
     fin = (f"finale={cp_err:.1f}cp  ENTRAINEMENT={tr_err:.1f}cp"
