@@ -23,6 +23,12 @@
 
 #if defined(__AVX2__)
     #include <immintrin.h>
+#elif defined(__ARM_NEON) && defined(__aarch64__)
+    // ARM 64 bits (Mac M1+, Graviton, Ampere d'Oracle) : registres de 8 int16.
+    // Les sommes int16 et int32 bouclent comme en AVX2 : resultat identique
+    // au bit pres, quel que soit l'ordre des additions.
+    #include <arm_neon.h>
+    #define ONE_NEON 1
 #endif
 
 namespace one {
@@ -126,9 +132,11 @@ inline std::int64_t hsum64(__m256i v) {
 #ifdef ONE_FT_INT8
 using FtW = std::int8_t;
     #define FT_LOAD(p) _mm256_cvtepi8_epi16(_mm_load_si128(reinterpret_cast<const __m128i*>(p)))
+    #define FT_LOADN(p) vmovl_s8(vld1_s8(p))
 #else
 using FtW = std::int16_t;
     #define FT_LOAD(p) _mm256_load_si256(reinterpret_cast<const __m256i*>(p))
+    #define FT_LOADN(p) vld1q_s16(p)
 #endif
 
 inline void add_feature(std::int16_t* acc, const FtW* w) {
@@ -139,6 +147,9 @@ inline void add_feature(std::int16_t* acc, const FtW* w) {
         __m256i b = FT_LOAD(w + i);
         _mm256_store_si256(reinterpret_cast<__m256i*>(acc + i), _mm256_add_epi16(a, b));
     }
+#elif defined(ONE_NEON)
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+        vst1q_s16(acc + i, vaddq_s16(vld1q_s16(acc + i), FT_LOADN(w + i)));
 #else
     for (int i = 0; i < HIDDEN_SIZE; ++i)
         acc[i] = std::int16_t(acc[i] + w[i]);
@@ -153,6 +164,9 @@ inline void sub_feature(std::int16_t* acc, const FtW* w) {
         __m256i b = FT_LOAD(w + i);
         _mm256_store_si256(reinterpret_cast<__m256i*>(acc + i), _mm256_sub_epi16(a, b));
     }
+#elif defined(ONE_NEON)
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+        vst1q_s16(acc + i, vsubq_s16(vld1q_s16(acc + i), FT_LOADN(w + i)));
 #else
     for (int i = 0; i < HIDDEN_SIZE; ++i)
         acc[i] = std::int16_t(acc[i] - w[i]);
@@ -175,6 +189,18 @@ inline std::int32_t forward_half(const std::int16_t* acc, const std::int16_t* w)
         sum       = _mm256_add_epi32(sum, _mm256_madd_epi16(a, b));
     }
     return hsum(sum);
+#elif defined(ONE_NEON)
+    const int16x8_t zero = vdupq_n_s16(0);
+    const int16x8_t qa   = vdupq_n_s16(QA);
+    int32x4_t       s0 = vdupq_n_s32(0), s1 = vdupq_n_s32(0);
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+    {
+        const int16x8_t a = vminq_s16(vmaxq_s16(vld1q_s16(acc + i), zero), qa);
+        const int16x8_t b = vld1q_s16(w + i);
+        s0 = vmlal_s16(s0, vget_low_s16(a), vget_low_s16(b));
+        s1 = vmlal_high_s16(s1, a, b);
+    }
+    return vaddvq_s32(vaddq_s32(s0, s1));
 #else
     std::int32_t sum = 0;
     for (int i = 0; i < HIDDEN_SIZE; ++i)
@@ -204,6 +230,21 @@ inline std::int32_t forward_half_t(const std::int16_t* acc, const std::int16_t* 
         sum       = _mm256_add_epi32(sum, _mm256_madd_epi16(a, b));
     }
     return hsum(sum);
+#elif defined(ONE_NEON)
+    const int16x8_t zero = vdupq_n_s16(0);
+    const int16x8_t qa   = vdupq_n_s16(QA);
+    int32x4_t       s0 = vdupq_n_s32(0), s1 = vdupq_n_s32(0);
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+    {
+        int16x8_t a = vld1q_s16(acc + i);
+        for (int k = 0; k < n; ++k)
+            a = vaddq_s16(a, vld1q_s16(rows[k] + i));
+        a = vminq_s16(vmaxq_s16(a, zero), qa);
+        const int16x8_t b = vld1q_s16(w + i);
+        s0 = vmlal_s16(s0, vget_low_s16(a), vget_low_s16(b));
+        s1 = vmlal_high_s16(s1, a, b);
+    }
+    return vaddvq_s32(vaddq_s32(s0, s1));
 #else
     std::int32_t sum = 0;
     for (int i = 0; i < HIDDEN_SIZE; ++i)
@@ -240,6 +281,20 @@ inline std::int64_t forward_half_sq(const std::int16_t* acc, const std::int16_t*
         sum       = _mm256_add_epi32(sum, _mm256_madd_epi16(a, _mm256_mullo_epi16(a, b)));
     }
     return hsum64(sum);
+#elif defined(ONE_NEON)
+    // Comme en AVX2 : a*w tient dans un int16, sommes int32 par voie, puis
+    // somme finale elargie en int64.
+    const int16x8_t zero = vdupq_n_s16(0);
+    const int16x8_t qa   = vdupq_n_s16(QA);
+    int32x4_t       s0 = vdupq_n_s32(0), s1 = vdupq_n_s32(0);
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+    {
+        const int16x8_t a  = vminq_s16(vmaxq_s16(vld1q_s16(acc + i), zero), qa);
+        const int16x8_t aw = vmulq_s16(a, vld1q_s16(w + i));
+        s0 = vmlal_s16(s0, vget_low_s16(a), vget_low_s16(aw));
+        s1 = vmlal_high_s16(s1, a, aw);
+    }
+    return vaddlvq_s32(s0) + vaddlvq_s32(s1);
 #else
     std::int64_t sum = 0;
     for (int i = 0; i < HIDDEN_SIZE; ++i)
@@ -443,6 +498,20 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
                 v = _mm256_add_epi16(v, _mm256_load_si256(
                                           reinterpret_cast<const __m256i*>(pair_weights(pAdd[k]) + j)));
             _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
+        }
+#elif defined(ONE_NEON)
+        for (int j = 0; j < HIDDEN_SIZE; j += 8)
+        {
+            int16x8_t v = vld1q_s16(s + j);
+            for (int k = 0; k < ns; ++k)
+                v = vsubq_s16(v, FT_LOADN(subs[k] + j));
+            for (int k = 0; k < na; ++k)
+                v = vaddq_s16(v, FT_LOADN(adds[k] + j));
+            for (int k = 0; k < nps; ++k)
+                v = vsubq_s16(v, vld1q_s16(pair_weights(pSub[k]) + j));
+            for (int k = 0; k < npa; ++k)
+                v = vaddq_s16(v, vld1q_s16(pair_weights(pAdd[k]) + j));
+            vst1q_s16(d + j, v);
         }
 #else
         for (int j = 0; j < HIDDEN_SIZE; ++j)
@@ -792,6 +861,9 @@ void refresh_side(Accumulator& acc, const Position& pos, Color p) {
                 a = _mm256_add_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + j)));
                 _mm256_store_si256(reinterpret_cast<__m256i*>(acc.v[p] + j), a);
             }
+#elif defined(ONE_NEON)
+            for (int j = 0; j < HIDDEN_SIZE; j += 8)
+                vst1q_s16(acc.v[p] + j, vaddq_s16(vld1q_s16(acc.v[p] + j), vld1q_s16(w + j)));
 #else
             for (int j = 0; j < HIDDEN_SIZE; ++j)
                 acc.v[p][j] = std::int16_t(acc.v[p][j] + w[j]);
@@ -872,6 +944,25 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
         {
             _mm256_store_si256(reinterpret_cast<__m256i*>(e.acc + j + 16 * t), v[t]);
             _mm256_store_si256(reinterpret_cast<__m256i*>(acc.v[p] + j + 16 * t), v[t]);
+        }
+    }
+#elif defined(ONE_NEON)
+    constexpr int TILE = 16;  // 16 des 32 registres NEON : 128 valeurs par tuile
+    for (int j = 0; j < HIDDEN_SIZE; j += 8 * TILE)
+    {
+        int16x8_t v[TILE];
+        for (int t = 0; t < TILE; ++t)
+            v[t] = vld1q_s16(e.acc + j + 8 * t);
+        for (int k = 0; k < ns; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = vsubq_s16(v[t], FT_LOADN(subs[k] + j + 8 * t));
+        for (int k = 0; k < na; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = vaddq_s16(v[t], FT_LOADN(adds[k] + j + 8 * t));
+        for (int t = 0; t < TILE; ++t)
+        {
+            vst1q_s16(e.acc + j + 8 * t, v[t]);
+            vst1q_s16(acc.v[p] + j + 8 * t, v[t]);
         }
     }
 #else
