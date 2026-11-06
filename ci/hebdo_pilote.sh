@@ -26,11 +26,11 @@ for cand in $(gh release list -R "$REPO" --limit 50 --json tagName,isPrerelease 
   K=${cand#candidat-}; NOM="Hebdo$K"
   CAND_URL=$(url "$cand" onechess.nnue)
   runs() { gh run list -R "$REPO" --workflow sprt_lot.yml --limit 200 --json databaseId,displayTitle,status,conclusion \
-             -q ".[] | select(.displayTitle | startswith(\"$NOM (vague \")) | select(.conclusion != \"cancelled\")"; }
-  if runs | grep -q '"status":"\(queued\|in_progress\|waiting\)"'; then echo "$NOM : vague en cours"; continue; fi
+             -q ".[] | select(.displayTitle | startswith(\"$NOM (vague \")) | select(.conclusion != \"cancelled\") | \"\(.databaseId) \(.status)\""; }
+  if runs | grep -qv ' completed$'; then echo "$NOM : vague en cours"; continue; fi
   D=etats/$NOM; rm -rf "$D"; mkdir -p "$D"
   v=0
-  for id in $(runs | python3 -c "import sys,json;[print(json.loads(l)['databaseId']) for l in sys.stdin if l.strip()]"); do
+  for id in $(runs | awk '{print $1}'); do
     v=$((v+1)); gh run download "$id" -R "$REPO" -p 'etat-*' -D "$D/r$id" >/dev/null 2>&1 || true
   done
   if [ "$v" -gt 0 ]; then
