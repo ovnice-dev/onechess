@@ -58,6 +58,8 @@ def main():
     ap.add_argument('--fixe', type=float, default=0)
     ap.add_argument('--parts', type=int, default=4)
     ap.add_argument('--graine', type=int, default=1)
+    ap.add_argument('--inverse', type=int, default=0,
+                    help='1 = le complement exact de --garde (meme graine) : les positions non gardees')
     ap.add_argument('--par', type=int, default=5000000)
     a = ap.parse_args()
 
@@ -78,6 +80,8 @@ def main():
                '--graine', str(a.graine * 100 + i), '--par', str(a.par)]
         if a.fixe:
             cmd += ['--fixe', str(a.fixe)]
+        if a.inverse:
+            cmd += ['--inverse', '1']
         procs.append(subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True))
     for p in procs:
         err = p.communicate()[1]

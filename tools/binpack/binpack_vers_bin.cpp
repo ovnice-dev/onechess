@@ -87,6 +87,7 @@ int main(int argc, char** argv) {
     }
     const std::string src = argv[1], prefixe = argv[2];
     double garde = 1.0;
+    int inverse = 0;   // 1 : garde exactement les positions que --garde rejette (meme graine)
     long long par = 50000000, maxi = -1;
     int ply_min = 16;
     unsigned graine = 1;
@@ -94,6 +95,7 @@ int main(int argc, char** argv) {
     for (int i = 3; i + 1 < argc; i += 2) {
         const std::string o = argv[i];
         if (o == "--garde") garde = std::atof(argv[i + 1]);
+        else if (o == "--inverse") inverse = std::atoi(argv[i + 1]);
         else if (o == "--par") par = std::atoll(argv[i + 1]);
         else if (o == "--fixe") fixe = std::atof(argv[i + 1]);
         else if (o == "--max") maxi = std::atoll(argv[i + 1]);
@@ -123,7 +125,7 @@ int main(int argc, char** argv) {
         last_score = e.score;
         if (e.ply <= ply_min) { ++rejet_debut; continue; }
         if (e.isCapturingMove() || e.isInCheck()) { ++rejet_tactique; continue; }
-        if (garde < 1.0 && u(rng) >= garde) continue;
+        if (garde < 1.0 && ((u(rng) >= garde) != (inverse != 0))) continue;
 
         if (!out || ecrites % par == 0) {
             if (out) std::fclose(out);
