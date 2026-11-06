@@ -561,8 +561,15 @@ void UCI::loop(int argc, char* argv[]) {
         // Ces commandes touchent a ce que la recherche utilise (table,
         // reseau, tables de finales, historiques, threads) : on attend
         // qu'elle soit vraiment finie. "stop" ne fait que la PREVENIR.
-        if (token == "setoption" || token == "ucinewgame" || token == "bench" || token == "perft"
-            || token == "perfttest" || token == "eval")
+        // Une recherche de ponder ou infinie ne finit jamais d'elle-meme : si une
+        // telle commande (ou un nouveau "go") arrive sans "stop" prealable,
+        // attendre la figerait pour toujours, la boucle ne lisant plus rien.
+        // On l'arrete d'abord (le coup qu'elle rend est alors sans objet).
+        const bool attend = token == "setoption" || token == "ucinewgame" || token == "bench"
+                         || token == "perft" || token == "perfttest" || token == "eval" || token == "go";
+        if (attend && (Search::Ponder || Search::Limits.infinite))
+            Threads.stop = true;
+        if (attend && token != "go")
             Threads.main()->wait_for_search_finished();
 
         if (token == "quit" || token == "stop")

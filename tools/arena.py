@@ -160,6 +160,7 @@ def play_game(white, black, opening_fen, cfg, game_id):
     cb = cfg["b"]
     clocks = {chess.WHITE: cw["base"], chess.BLACK: cb["base"]}
     incs = {chess.WHITE: cw["inc"], chess.BLACK: cb["inc"]}
+    joues = {chess.WHITE: 0, chess.BLACK: 0}      # coups joues, pour les cadences N coups / temps
 
     # Adjudication : compteurs de coups consecutifs sous seuil
     draw_run = 0
@@ -189,11 +190,13 @@ def play_game(white, black, opening_fen, cfg, game_id):
         elif side["depth"]:
             limit = chess.engine.Limit(depth=side["depth"])
         else:
+            mtg = side.get("mtg", 0)
             limit = chess.engine.Limit(
                 white_clock=clocks[chess.WHITE],
                 black_clock=clocks[chess.BLACK],
                 white_inc=incs[chess.WHITE],
                 black_inc=incs[chess.BLACK],
+                remaining_moves=(mtg - joues[stm] % mtg) if mtg else None,
             )
 
         t0 = time.perf_counter()
@@ -213,6 +216,11 @@ def play_game(white, black, opening_fen, cfg, game_id):
             if clocks[stm] < -cfg["tolerance"]:
                 return (0.0 if stm == chess.WHITE else 1.0), "perte au temps"
             clocks[stm] = max(0.0, clocks[stm]) + inc
+            joues[stm] += 1
+            if side.get("mtg") and joues[stm] % side["mtg"] == 0:
+                clocks[stm] += side["base"]       # nouveau controle de temps
+            if cfg.get("trace_temps") is not None:
+                cfg["trace_temps"].append((stm, joues[stm], elapsed, clocks[stm]))
 
         move = result.move
         if move is None or move not in board.legal_moves:
@@ -279,10 +287,15 @@ def play_pair(task):
 
 
 def parse_tc(s):
+    """'10+0.1' (mort subite + increment) ou '40/60' (40 coups en 60 s, repete :
+    la cadence du CCRL 40/15) ; rend (base, increment, coups par controle)."""
+    if "/" in s:
+        n, base = s.split("/")
+        return float(base), 0.0, int(n)
     if "+" in s:
         base, inc = s.split("+")
-        return float(base), float(inc)
-    return float(s), 0.0
+        return float(base), float(inc), 0
+    return float(s), 0.0, 0
 
 
 def parse_options(items):
@@ -358,8 +371,8 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    base, inc = parse_tc(args.tc)
-    base2, inc2 = parse_tc(args.tc2) if args.tc2 else (base, inc)
+    base, inc, mtg = parse_tc(args.tc)
+    base2, inc2, mtg2 = parse_tc(args.tc2) if args.tc2 else (base, inc, mtg)
 
     e1_path = os.path.abspath(args.e1)
     e2_path = os.path.abspath(args.e2)
@@ -371,8 +384,8 @@ def main():
     spec2 = EngineSpec(e2_path, args.name2 or os.path.basename(args.e2), parse_options(args.opt2))
 
     cfg = {
-        "c1": {"base": base, "inc": inc, "depth": args.depth1, "nodes": args.nodes1},
-        "c2": {"base": base2, "inc": inc2, "depth": args.depth2, "nodes": args.nodes2},
+        "c1": {"base": base, "inc": inc, "mtg": mtg, "depth": args.depth1, "nodes": args.nodes1},
+        "c2": {"base": base2, "inc": inc2, "mtg": mtg2, "depth": args.depth2, "nodes": args.nodes2},
         "max_moves": args.max_moves,
         "win_cp": args.win_cp if args.win_cp > 0 else 0,
         "win_moves": args.win_moves,
