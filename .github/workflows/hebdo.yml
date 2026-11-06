@@ -1,0 +1,30 @@
+name: Entrainement continu (pilote)
+
+# Toutes les heures : juge les reseaux candidats de l'entrainement continu
+# (pre-releases candidat-K) par un match au temps contre le dernier reseau
+# adopte, et publie la release reseau-K s'il gagne. Voir ci/hebdo_pilote.sh.
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: hebdo
+  cancel-in-progress: false
+
+jobs:
+  piloter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: piloter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEBDO_X: ${{ vars.HEBDO_X }}
+        run: bash ci/hebdo_pilote.sh

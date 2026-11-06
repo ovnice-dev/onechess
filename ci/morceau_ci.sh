@@ -37,6 +37,22 @@ attendu=$(cat ci/signature.txt)
 echo "signature Linux $n, attendue $attendu"
 [ "$n" = "$attendu" ] || { echo "SIGNATURE DIFFERENTE : arret"; exit 1; }
 
+# EvalFile=https://... (reseau d'une release, entrainement continu) : telecharge
+# puis remplace par le chemin local.
+for o in ${OPT1:-} ${OPT2:-}; do
+    case "$o" in EvalFile=http*://*)
+        u=${o#EvalFile=}; f=reseau/url_$(printf '%s' "$u" | md5sum | cut -c1-12).nnue
+        [ -f "$f" ] || curl -sSfL "$u" -o "$f" || { echo "ECHEC telechargement $u"; exit 1; }
+        echo "reseau telecharge : $u -> $f";;
+    esac
+done
+url_local() {
+    case "$1" in EvalFile=http*://*) echo "EvalFile=reseau/url_$(printf '%s' "${1#EvalFile=}" | md5sum | cut -c1-12).nnue";;
+    *) echo "$1";;
+    esac
+}
+O1=""; for o in ${OPT1:-}; do O1="$O1 $(url_local "$o")"; done; OPT1=$O1
+O2=""; for o in ${OPT2:-}; do O2="$O2 $(url_local "$o")"; done; OPT2=$O2
 o1=""; for o in ${OPT1:-}; do o1="$o1 --opt1 $o"; done
 o2=""; for o in ${OPT2:-}; do o2="$o2 --opt2 $o"; done
 NC=$(nproc)
