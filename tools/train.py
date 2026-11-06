@@ -297,9 +297,10 @@ class FeatureMap:
         # ne depend pas du roi mais du materiel, avec la meme formule que les
         # buckets de sortie. Mesure d'erreur seulement : le moteur ne sait pas
         # encore lire ce format, d'ou un layout de roi nul a l'export.
-        self.material = bucket_name == "mat4"
+        # "mat8" (phase 10) : 8 experts, bandes de 4 pieces au lieu de 8.
+        self.material = bucket_name in ("mat4", "mat8")
         if self.material:
-            self.nbuckets = 4
+            self.nbuckets = 8 if bucket_name == "mat8" else 4
             self.layout   = torch.zeros(64, dtype=torch.long, device=device)
         else:
             self.nbuckets = bucket_count(bucket_name, mirror)
@@ -329,7 +330,8 @@ class FeatureMap:
         base = pidx * 64 + rel                       # sans le bucket
         if self.material:
             n    = valid.sum(dim=1, keepdim=True)
-            feat = torch.clamp((n - 2) // 8, 0, 3) * BASE_INPUTS + base
+            # bande = (pieces - 2) * experts / 32 : identique a (n - 2) // 8 pour 4 experts
+            feat = torch.clamp((n - 2) * self.nbuckets // 32, 0, self.nbuckets - 1) * BASE_INPUTS + base
         else:
             feat = self.layout[ksq] * BASE_INPUTS + base
 
@@ -622,7 +624,7 @@ def main():
                     help="--stream : fichiers par epoque (0 = tous) ; pour les tres gros lots")
     ap.add_argument("--ft-int8", type=int, default=0,
                     help="1 = premiere couche bornee pour le moteur ONE_FT_INT8")
-    ap.add_argument("--buckets", default="plain", choices=list(BUCKET_LAYOUTS) + ["mat4"])
+    ap.add_argument("--buckets", default="plain", choices=list(BUCKET_LAYOUTS) + ["mat4", "mat8"])
     ap.add_argument("--mirror", type=int, default=0)
     ap.add_argument("--out-buckets", type=int, default=1, choices=[1, 2, 4, 8])
     ap.add_argument("--activation", default="crelu",

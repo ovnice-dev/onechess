@@ -570,7 +570,8 @@ PerspInfo persp_info(Color p, Square ksq) {
 // Bande de materiel : meme formule que les buckets de sortie et que
 // tools/train.py (mode "mat4"). Melange d'experts a la Triumviratus 8.0.
 inline int material_bucket(int pieceCount) {
-    return std::clamp((pieceCount - 2) / 8, 0, Net->nBuckets - 1);
+    // bandes de 32 / experts pieces : (n - 2) / 8 pour 4 experts, (n - 2) / 4 pour 8
+    return std::clamp((pieceCount - 2) * Net->nBuckets / 32, 0, Net->nBuckets - 1);
 }
 
 // Le bucket d'entree d'une perspective : par la case du roi, ou par le

@@ -115,7 +115,7 @@ class Net:
         ksq = board.king(persp)
         bucket, flip = self.persp_info(persp, ksq)
         if self.material:
-            bucket, flip = min(max((len(board.piece_map()) - 2) // 8, 0), self.nb - 1), 0
+            bucket, flip = min(max((len(board.piece_map()) - 2) * self.nb // 32, 0), self.nb - 1), 0
         out = []
         for sq, pc in board.piece_map().items():
             colour = 0 if pc.color == chess.WHITE else 1
