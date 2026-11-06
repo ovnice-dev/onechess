@@ -145,6 +145,40 @@ def decode_shards(pattern, limit=0, cache=None):
     return codes, sqs, score, stm, result
 
 
+def greffer(model, sd):
+    """Demarrage a chaud (phase 10) : charge les poids d'un reseau dans une
+    architecture plus grande. Poids de meme forme : copies. Experts par
+    materiel 4 -> 8 : chaque nouvel expert part de l'ancien qui couvrait sa
+    bande (meme evaluation au depart). Menaces, paires de pions : neuves, A
+    ZERO (meme evaluation au depart). Couches cachees : neuves (init. par
+    defaut) sur la 1re couche du reseau d'origine."""
+    msd = model.state_dict()
+    with torch.no_grad():
+        for k, v in msd.items():
+            if k not in sd:
+                if k.startswith(("th.", "pp.")):
+                    v.zero_()
+                    print(f"greffe : {k} neuf, a zero")
+                else:
+                    print(f"greffe : {k} neuf")
+                continue
+            w = sd[k].to(v.device)
+            if w.shape == v.shape:
+                v.copy_(w)
+            elif k == "ft.weight" and w.shape[1] == v.shape[1]:
+                nb_old, nb_new = (w.shape[0] - 1) // BASE_INPUTS, (v.shape[0] - 1) // BASE_INPUTS
+                for b in range(nb_new):
+                    o = b * nb_old // nb_new
+                    v[b * BASE_INPUTS:(b + 1) * BASE_INPUTS] = w[o * BASE_INPUTS:(o + 1) * BASE_INPUTS]
+                v[-1].zero_()
+                print(f"greffe : experts {nb_old} -> {nb_new} (chacun part de son ancien expert)")
+            else:
+                raise SystemExit(f"greffe impossible pour {k} : {tuple(w.shape)} -> {tuple(v.shape)}")
+    for k in sd:
+        if k not in msd:
+            print(f"greffe : {k} du reseau d'origine non utilise")
+
+
 def dedup_recs(recs, k):
     """Garde au plus k exemplaires de chaque position (plateau + trait).
 
@@ -653,6 +687,8 @@ def main():
                          "par lot : 32 o/position au lieu de 92")
     ap.add_argument("--init", default="",
                     help="poids flottants (.pt) a reprendre : affinage d'un reseau deja entraine")
+    ap.add_argument("--greffe", default="",
+                    help="poids (.pt ou point de reprise .ckpt) d'un reseau plus petit a greffer (phase 10)")
     ap.add_argument("--save-pt", default="",
                     help="sauver aussi les poids flottants de la meilleure epoque, pour un affinage ulterieur")
     ap.add_argument("--essai-a-blanc", type=int, default=0,
@@ -769,6 +805,12 @@ def main():
     if args.init:
         model.load_state_dict(torch.load(args.init, map_location=dev))
         print(f"reprise des poids de {args.init}")
+    if args.greffe:
+        g = torch.load(args.greffe, map_location=dev, weights_only=False)
+        if isinstance(g, dict) and "model" in g and "epoch" in g:     # point de reprise : meilleure epoque
+            g = g.get("best_state") or g["model"]
+        greffer(model, g)
+        print(f"greffe depuis {args.greffe}")
 
     opt   = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs,
