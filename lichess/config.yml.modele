@@ -10,7 +10,7 @@ engine:
   protocol: "uci"
   ponder: true
   uci_options:
-    Move Overhead: 100              # marge pour le reseau (ms)
+    Move Overhead: 80               # marge reseau (ms) ; a ajuster a la latence de la machine
     Threads: 4                      # selon la machine qui fait tourner le bot
     Hash: 512
     UCI_ShowWDL: true
