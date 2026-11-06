@@ -17,6 +17,8 @@ ICI = os.path.expanduser("~")
 CFG = os.path.join(ICI, "lichess-bot", "config.yml")
 ETAT = os.path.join(ICI, "garde_etat.json")
 JOURNAL = os.path.join(ICI, "garde.log")
+UCI = os.path.join(ICI, "uci.log")          # option Debug Log File du moteur (config.yml)
+UCI_MAX = 300 * 1024 * 1024
 
 
 def note(msg):
@@ -52,10 +54,20 @@ def main():
         e["suspect"] += 1
         if e["suspect"] >= 2:
             note(f"lichess-bot croit jouer {bot} partie(s), Lichess n'en voit aucune depuis 10 min : redemarrage")
+            if os.path.exists(UCI):   # fin des echanges UCI, pour comprendre le blocage
+                inc = os.path.join(ICI, time.strftime("incident-%m%d-%H%M.log"))
+                subprocess.run(f"tail -n 400 {UCI} > {inc}", shell=True)
+                note(f"echanges UCI sauves dans {inc}")
             subprocess.run(["sudo", "systemctl", "restart", "lichessbot"], check=False)
             e["suspect"] = 0
     else:
         e["suspect"] = 0
+        # Journal UCI trop gros : on l'efface quand aucune partie n'est en cours ;
+        # le moteur le rouvre au redemarrage de lichess-bot.
+        if lichess == 0 and bot == 0 and os.path.exists(UCI) and os.path.getsize(UCI) > UCI_MAX:
+            os.remove(UCI)
+            subprocess.run(["sudo", "systemctl", "restart", "lichessbot"], check=False)
+            note("journal UCI efface (plus de 300 Mo), lichess-bot redemarre")
     json.dump(e, open(ETAT, "w"))
 
 
