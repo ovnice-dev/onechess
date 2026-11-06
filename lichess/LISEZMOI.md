@@ -31,6 +31,12 @@ tout 5 minutes après la fin. `regles.sh` permet de le faire à la main.
 étiquette, vérifie la signature `bench 12`, attend la fin de la partie en cours
 et redémarre lichess-bot (qui garde son moteur d'une partie à l'autre).
 
+## Garde-fou (automatique)
+
+`garde.py`, toutes les 5 minutes : si lichess-bot croit jouer une partie que
+Lichess ne voit pas (deux fois de suite), il redémarre lichess-bot. Le 6-11, une
+partie perdue au temps avait bloqué le bot 10 heures.
+
 ## Cadences des défis (automatique)
 
 `categories.py`, lancé chaque minute, fait tourner la cadence des défis
