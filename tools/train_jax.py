@@ -55,6 +55,40 @@ def decoder(r, ob_n, lam):
     return codes, sqs, stm, ob, sc, tg
 
 
+def decoder_cases(r, ob_n, lam):
+    """Meme decodage, sans tri (lent sur TPU) : chaque case occupee lit son
+    quartet par son rang parmi les cases occupees. Rend des tableaux (B, 64),
+    une colonne par case (code 12 = case vide)."""
+    r = r.astype(jnp.int32)
+    B = r.shape[0]
+    bits = ((r[:, 0:8, None] >> jnp.arange(8)) & 1).reshape(B, 64)
+    counts = bits.sum(1)
+    pcs = r[:, 8:24]
+    nib = jnp.stack([pcs & 0x0F, pcs >> 4], axis=2).reshape(B, 32)
+    rang = jnp.clip(jnp.cumsum(bits, axis=1) - 1, 0, 31)
+    codes = jnp.where(bits == 1, jnp.take_along_axis(nib, rang, axis=1), 12)
+    sqs = jnp.broadcast_to(jnp.arange(64), (B, 64))
+    sc = r[:, 24] | (r[:, 25] << 8)
+    sc = jnp.where(sc >= 32768, sc - 65536, sc).astype(jnp.float32)
+    stm = r[:, 26]
+    res = r[:, 27].astype(jnp.float32) / 2.0
+    sign = 1.0 - 2.0 * stm.astype(jnp.float32)
+    sc = sc * sign
+    res = jnp.where(stm == 0, res, 1.0 - res)
+    tg = lam * jax.nn.sigmoid(sc / SCALE) + (1.0 - lam) * res
+    ob = jnp.minimum((counts - 2) // (32 // ob_n), ob_n - 1)
+    return codes, sqs, stm, ob, sc, tg
+
+
+def multi_chaud(idx, n):
+    """(B, k) indices -> (B, n) comptes : la 1re couche devient un produit de matrices denses (TPU)."""
+    B = idx.shape[0]
+    return jnp.zeros((B, n), jnp.float32).at[jnp.arange(B)[:, None], idx].add(1.0)
+
+
+DENSE = False      # --ft-dense : 1re couche en produits de matrices (TPU)
+
+
 def indices(codes, sqs, persp, nb):
     valid = codes < 12
     colour = codes // 6
@@ -68,11 +102,22 @@ def indices(codes, sqs, persp, nb):
 
 
 def predire(p, r, nb, ob_n, lam):
-    codes, sqs, stm, ob, sc, tg = decoder(r, ob_n, lam)
+    if DENSE:
+        codes, sqs, stm, ob, sc, tg = decoder_cases(r, ob_n, lam)
+    else:
+        codes, sqs, stm, ob, sc, tg = decoder(r, ob_n, lam)
     fw, bw = indices(codes, sqs, 0, nb)
     fb, bb = indices(codes, sqs, 1, nb)
-    aw = p["ft"][fw].sum(1) + p["ft_v"][bw].sum(1) + p["ft_bias"]
-    ab = p["ft"][fb].sum(1) + p["ft_v"][bb].sum(1) + p["ft_bias"]
+    if DENSE:
+        hp = jax.lax.Precision.HIGHEST
+        nf, nv = p["ft"].shape[0], p["ft_v"].shape[0]
+        aw = (jnp.matmul(multi_chaud(fw, nf), p["ft"], precision=hp)
+              + jnp.matmul(multi_chaud(bw, nv), p["ft_v"], precision=hp) + p["ft_bias"])
+        ab = (jnp.matmul(multi_chaud(fb, nf), p["ft"], precision=hp)
+              + jnp.matmul(multi_chaud(bb, nv), p["ft_v"], precision=hp) + p["ft_bias"])
+    else:
+        aw = p["ft"][fw].sum(1) + p["ft_v"][bw].sum(1) + p["ft_bias"]
+        ab = p["ft"][fb].sum(1) + p["ft_v"][bb].sum(1) + p["ft_bias"]
     s = stm[:, None] == 0
     us, them = jnp.where(s, aw, ab), jnp.where(s, ab, aw)
     x = jnp.concatenate([jnp.clip(us, 0, 1), jnp.clip(them, 0, 1)], axis=1)
@@ -252,7 +297,10 @@ def main():
     ap.add_argument("--limite-s", type=float, default=0, help="arret propre apres ce temps (session)")
     ap.add_argument("--max-pas", type=int, default=0, help="essai de vitesse : arret apres N pas")
     ap.add_argument("--verifier", action="store_true", help="comparaison pas a pas avec train.py")
+    ap.add_argument("--ft-dense", type=int, default=0, help="1 = 1re couche en produits de matrices denses (TPU)")
     a = ap.parse_args()
+    global DENSE
+    DENSE = bool(a.ft_dense)
     if a.verifier:
         return verifier(a)
     t0 = time.time()
