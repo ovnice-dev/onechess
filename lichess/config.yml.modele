@@ -55,3 +55,5 @@ matchmaking:
   challenge_mode: "rated"
   challenge_filter: coarse         # ne pas redefier un bot qui a refuse
   include_challenge_block_list: false
+
+abort_time: 60                       # temps laisse a l'adversaire pour son 1er coup (20 s par defaut : trop court pour les humains)
