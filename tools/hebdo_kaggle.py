@@ -30,13 +30,20 @@ TETE = '''import glob as _g, os as _o, subprocess as _sp, sys as _sys, tarfile a
 # Entrainement continu, semaine {k}, session {s} sur 2. Donnees neuves dans /tmp/donnees.
 SOURCES = {sources!r}
 _t0 = _ti.time()
+# Journal aussi dans un fichier de sortie (conserve par Kaggle) : le journal de session a ete perdu le 7-11.
+_j = open('/kaggle/working/session.log', 'a', buffering=1)
+class _Tee:
+    def __init__(self, *f): self.f = f
+    def write(self, x): [f.write(x) for f in self.f]
+    def flush(self): [f.flush() for f in self.f]
+_sys.stdout = _sys.stderr = _Tee(_sys.__stdout__, _j)
 _t.open(fileobj=_io.BytesIO(_u.urlopen('https://codeload.github.com/ovnice-dev/onechess/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = _g.glob('/tmp/code/*/tools')[0]
 for s in SOURCES:
     _sp.run([_sys.executable, '-u', TOOLS + '/hf_sources.py', '--url', s['url'], '--prefixe', s['prefixe'],
              '--dest', '/tmp/donnees', '--octets', str(s['octets']), '--garde', str(s['garde']),
              '--fixe', str(s['fixe']), '--graine', str(s['graine']), '--inverse', str(s.get('inverse', 0)),
-             '--parts', str(_o.cpu_count())], check=True)
+             '--morceau', '4000000000', '--parts', str(_o.cpu_count())], check=True, stdout=_j, stderr=_sp.STDOUT)
 _v = sorted(_g.glob('/tmp/donnees/*_p00_*.bin'))[0]
 _o.rename(_v, '/tmp/donnees/z_val.bin')
 _vr = __import__('numpy').fromfile('/tmp/donnees/z_val.bin', dtype='uint8').reshape(-1, 32)[:5_000_000]

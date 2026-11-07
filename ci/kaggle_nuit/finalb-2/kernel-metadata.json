@@ -1,6 +1,6 @@
 {
- "id": "ovnice/onechess-final-2",
- "title": "onechess-final-2",
+ "id": "ovnice/onechess-finalb-2",
+ "title": "onechess-finalb-2",
  "code_file": "run.py",
  "language": "python",
  "kernel_type": "script",
@@ -13,6 +13,6 @@
  "machine_shape": "NvidiaTeslaT4",
  "competition_sources": [],
  "kernel_sources": [
-  "ovnice/onechess-final-1"
+  "ovnice/onechess-finalb-1"
  ]
 }
