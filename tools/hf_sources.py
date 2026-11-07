@@ -48,6 +48,58 @@ def telecharger(url, dest, octets):
     print(f"telecharge {n / 1e9:.2f} Go en {time.time() - t:.0f} s", flush=True)
 
 
+def taille_distante(url):
+    req = urllib.request.Request(url, headers={'Range': 'bytes=0-0'})
+    with urllib.request.urlopen(req) as r:
+        cr = r.headers.get('Content-Range', '')
+    return int(cr.split('/')[-1])
+
+
+def par_morceaux(a):
+    sys.path.insert(0, os.path.join(ICI, 'binpack'))
+    from decouper import frontieres
+    total = a.octets or taille_distante(a.url)
+    exe = convertisseur()
+    tmp = os.path.join('/tmp', f'src_{a.prefixe}')
+    debut, m, t = 0, 0, time.time()
+    while debut < total:
+        os.makedirs(tmp, exist_ok=True)
+        src = os.path.join(tmp, 'source.binpack')
+        fin_m = min(total, debut + a.morceau)
+        req = urllib.request.Request(a.url, headers={'Range': f'bytes={debut}-{fin_m - 1}'})
+        with urllib.request.urlopen(req) as r, open(src, 'wb') as f:
+            shutil.copyfileobj(r, f, 1 << 24)
+        debuts, utile = frontieres(src)
+        if not debuts:
+            if fin_m == total:              # reste incomplet d'un telechargement partiel (--octets)
+                shutil.rmtree(tmp)
+                break
+            sys.exit(f"morceau {m} : aucun bloc complet a l'octet {debut}")
+        subprocess.run([sys.executable, os.path.join(ICI, 'binpack', 'decouper.py'), src,
+                        os.path.join(tmp, 'part'), str(a.parts)], check=True, stdout=subprocess.DEVNULL)
+        os.remove(src)
+        procs = []
+        for i, p in enumerate(sorted(glob.glob(os.path.join(tmp, 'part*.binpack')))):
+            cmd = [exe, p, os.path.join(a.dest, f'{a.prefixe}_m{m:03d}_p{i:02d}'), '--garde', str(a.garde),
+                   '--graine', str(a.graine * 100000 + m * 100 + i), '--par', str(a.par)]
+            if a.fixe:
+                cmd += ['--fixe', str(a.fixe)]
+            if a.inverse:
+                cmd += ['--inverse', '1']
+            procs.append(subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True))
+        for p in procs:
+            err = p.communicate()[1]
+            if p.returncode:
+                sys.exit(f"conversion en echec (code {p.returncode}) : {err.strip()[-300:]}")
+        shutil.rmtree(tmp)
+        debut += utile                      # le bloc coupe en fin de morceau est repris au suivant
+        m += 1
+        n = sum(os.path.getsize(f) for f in glob.glob(os.path.join(a.dest, f'{a.prefixe}_m*.bin'))) // 32
+        libre = shutil.disk_usage(a.dest).free / 1e9
+        print(f"morceau {m} : {debut / 1e9:.1f} / {total / 1e9:.1f} Go lus, {n:,} positions, "
+              f"{time.time() - t:.0f} s, {libre:.0f} Go libres", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--url', required=True)
@@ -61,9 +113,15 @@ def main():
     ap.add_argument('--inverse', type=int, default=0,
                     help='1 = le complement exact de --garde (meme graine) : les positions non gardees')
     ap.add_argument('--par', type=int, default=5000000)
+    ap.add_argument('--morceau', type=int, default=0,
+                    help='octets par morceau (ex. 4000000000) : telecharge, convertit et efface morceau par '
+                         'morceau ; le disque temporaire ne depasse plus 2 morceaux (le fichier entier en '
+                         'demandait 2 fois sa taille, et a fait tomber le final du 7-11)')
     a = ap.parse_args()
 
     os.makedirs(a.dest, exist_ok=True)
+    if a.morceau:
+        return par_morceaux(a)
     tmp = os.path.join('/tmp', f'src_{a.prefixe}')
     os.makedirs(tmp, exist_ok=True)
     src = os.path.join(tmp, 'source.binpack')
