@@ -33,7 +33,7 @@ TUNABLE_LIST(TUNABLE_DEFINE)
 namespace Search {
 LimitsType        Limits;
 Value             RootTbScore = VALUE_NONE;
-std::atomic<bool> Ponder{false}, StopOnPonderhit{false};
+std::atomic<bool> Ponder{false}, StopOnPonderhit{false}, Active{false};
 }
 
 using namespace Search;
@@ -459,6 +459,8 @@ void Thread::iterative_deepening() {
                       << UCI::value(rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW)
                       << std::endl
                       << "bestmove (none)" << std::endl;
+        if (is_main())
+            Active = false;
         return;
     }
 
@@ -665,7 +667,10 @@ void Thread::iterative_deepening() {
     Threads.wait_for_helpers();
 
     if (Limits.silent)
+    {
+        Active = false;
         return;
+    }
 
     const Thread* best = Threads.best_thread();
     const bool    c960 = rootPos.is_chess960();
@@ -691,6 +696,7 @@ void Thread::iterative_deepening() {
     if (best->rootMoves[0].pv.size() > 1)
         std::cout << " ponder " << UCI::move(best->rootMoves[0].pv[1], c960);
     std::cout << std::endl;
+    Active = false;
 }
 
 namespace {

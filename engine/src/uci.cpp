@@ -2,6 +2,7 @@
 #include "prof.h"
 
 #include <algorithm>
+#include <thread>
 #include <cassert>
 #include <cctype>
 #include <cmath>
@@ -109,6 +110,7 @@ void go(Position& pos, std::istringstream& is, StateListPtr& states) {
     // recherche qui affichera le coup.
     Search::Ponder          = limits.ponderMode;
     Search::StopOnPonderhit = false;
+    Search::Active          = !limits.silent;
     Threads.start_thinking(pos, states, limits);
 }
 
@@ -540,6 +542,25 @@ std::string UCI::pv(const Thread& th, Depth depth) {
 // ------------------------------------------------------------- boucle UCI
 
 void UCI::loop(int argc, char* argv[]) {
+    // Chien de garde du temps (7-11) : le bot a perdu des parties au temps, le
+    // moteur continuant de chercher bien au-dela de sa limite apres un
+    // "ponderhit". Quelle qu'en soit la cause, une recherche au temps qui
+    // depasse son maximum d'une seconde est arretee de force (elle joue alors
+    // son meilleur coup), et c'est note dans le journal UCI.
+    static std::thread garde([] {
+        for (;;)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (Search::Active && !Search::Ponder && !Search::Limits.infinite && !Threads.stop
+                && Search::Limits.use_time_management() && Time.elapsed() > Time.maximum() + 1000)
+            {
+                std::cout << "info string chien de garde : arret force a " << Time.elapsed()
+                          << " ms (maximum " << Time.maximum() << ")" << std::endl;
+                Threads.stop = true;
+            }
+        }
+    });
+    garde.detach();
     Position     pos;
     StateListPtr states(new std::deque<StateInfo>(1));
 
@@ -632,6 +653,8 @@ void UCI::loop(int argc, char* argv[]) {
             Search::Ponder = false;
             if (Search::StopOnPonderhit)
                 Threads.stop = true;
+            std::cout << "info string ponderhit : " << Time.elapsed() << " ms ecoulees, optimum "
+                      << Time.optimum() << ", maximum " << Time.maximum() << std::endl;
         }
 
         else if (token == "position")

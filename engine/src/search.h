@@ -89,6 +89,8 @@ extern Value RootTbScore;
 // Ponder : pendant "go ponder", la recherche ne s'arrete jamais d'elle-meme ;
 // une decision d'arret prise pendant ce temps est remise au "ponderhit".
 extern std::atomic<bool> Ponder, StopOnPonderhit;
+// Une recherche lancee par "go" n'a pas encore rendu son coup (chien de garde du temps).
+extern std::atomic<bool> Active;
 
 void init();
 
