@@ -101,8 +101,57 @@ def indices(codes, sqs, persp, nb):
     return jnp.where(valid, feat, nb * BASE), jnp.where(valid, base, BASE)
 
 
+def entrees_denses(r, nb, ob_n, lam):
+    """Matrices des pieces (B, nb*768) et (B, 768) pour chaque perspective, sans
+    tri, sans lecture ni ecriture dispersee (lentes sur TPU) : comparaisons et
+    produits seulement. Meme contenu que les indices de indices()."""
+    r = r.astype(jnp.int32)
+    B = r.shape[0]
+    bits = ((r[:, 0:8, None] >> jnp.arange(8)) & 1).reshape(B, 64)
+    counts = bits.sum(1)
+    pcs = r[:, 8:24]
+    nib = jnp.stack([pcs & 0x0F, pcs >> 4], axis=2).reshape(B, 32).astype(jnp.float32)
+    rang = jnp.cumsum(bits, axis=1) - 1                                    # rang de chaque case occupee
+    sel = (rang[:, :, None] == jnp.arange(32)[None, None, :]) & (bits[:, :, None] == 1)
+    codes = jnp.einsum("bsk,bk->bs", sel.astype(jnp.float32), nib)        # quartet de chaque case
+    codes = jnp.where(bits == 1, codes, 12.0)
+    xw = (codes[:, :, None] == jnp.arange(12, dtype=jnp.float32)[None, None, :]).astype(jnp.float32)
+    xw = xw.transpose(0, 2, 1)                                             # (B, 12 pieces, 64 cases)
+    # Vue des noirs : couleurs echangees, echiquier retourne (case ^ 56 = rangee inversee)
+    xb = jnp.concatenate([xw[:, 6:12], xw[:, 0:6]], axis=1).reshape(B, 12, 8, 8)[:, :, ::-1, :]
+    xw, xb = xw.reshape(B, 768), xb.reshape(B, 768)
+    bande = jnp.clip((counts - 2) * nb // 32, 0, nb - 1)
+    ob1 = (bande[:, None] == jnp.arange(nb)[None, :]).astype(jnp.float32)
+    fw = (ob1[:, :, None] * xw[:, None, :]).reshape(B, nb * BASE)
+    fb = (ob1[:, :, None] * xb[:, None, :]).reshape(B, nb * BASE)
+    sc = r[:, 24] | (r[:, 25] << 8)
+    sc = jnp.where(sc >= 32768, sc - 65536, sc).astype(jnp.float32)
+    stm = r[:, 26]
+    res = r[:, 27].astype(jnp.float32) / 2.0
+    sign = 1.0 - 2.0 * stm.astype(jnp.float32)
+    sc = sc * sign
+    res = jnp.where(stm == 0, res, 1.0 - res)
+    tg = lam * jax.nn.sigmoid(sc / SCALE) + (1.0 - lam) * res
+    ob = jnp.minimum((counts - 2) // (32 // ob_n), ob_n - 1)
+    return fw, fb, xw, xb, stm, ob, sc, tg
+
+
 def predire(p, r, nb, ob_n, lam):
     if DENSE:
+        fw, fb, xw, xb, stm, ob, sc, tg = entrees_denses(r, nb, ob_n, lam)
+        hp = jax.lax.Precision.HIGHEST
+        n = nb * BASE
+        aw = (jnp.matmul(fw, p["ft"][:n], precision=hp) + jnp.matmul(xw, p["ft_v"][:BASE], precision=hp)
+              + p["ft_bias"])
+        ab = (jnp.matmul(fb, p["ft"][:n], precision=hp) + jnp.matmul(xb, p["ft_v"][:BASE], precision=hp)
+              + p["ft_bias"])
+        s = stm[:, None] == 0
+        us, them = jnp.where(s, aw, ab), jnp.where(s, ab, aw)
+        x = jnp.concatenate([jnp.clip(us, 0, 1), jnp.clip(them, 0, 1)], axis=1)
+        y = x @ p["out_w"].T + p["out_b"]
+        pred = jnp.take_along_axis(y, ob[:, None], axis=1)[:, 0]
+        return pred, tg, sc, jnp.maximum(jnp.abs(aw).max(), jnp.abs(ab).max())
+    if False:
         codes, sqs, stm, ob, sc, tg = decoder_cases(r, ob_n, lam)
     else:
         codes, sqs, stm, ob, sc, tg = decoder(r, ob_n, lam)
