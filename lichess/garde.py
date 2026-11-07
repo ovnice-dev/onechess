@@ -50,6 +50,17 @@ def main():
         note(f"API Lichess injoignable : {x}")
         return
     bot = occupe_bot()
+    # Cas inverse (7-11) : Lichess voit une partie que lichess-bot ne joue pas
+    # (defi accepte juste apres une fin de partie) : l'adversaire voit un
+    # absent. Au redemarrage, lichess-bot reprend les parties en cours.
+    if lichess > 0 and bot == 0:
+        e["orpheline"] = e.get("orpheline", 0) + 1
+        if e["orpheline"] >= 2:
+            note(f"Lichess voit {lichess} partie(s) que lichess-bot ne joue pas : redemarrage")
+            subprocess.run(["sudo", "systemctl", "restart", "lichessbot"], check=False)
+            e["orpheline"] = 0
+    else:
+        e["orpheline"] = 0
     if bot > 0 and lichess == 0:
         e["suspect"] += 1
         if e["suspect"] >= 2:
