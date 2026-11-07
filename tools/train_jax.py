@@ -155,6 +155,62 @@ def exporter(p, nb, hidden, ob_n, chemin, empirical, save_pt=""):
 
 
 # --------------------------------------------------------------------------
+# Points de reprise echangeables avec train.py (GPU <-> TPU, 7-11)
+# --------------------------------------------------------------------------
+
+ORDRE_TORCH = ["ft_bias", "ft", "ft_v", "out_w", "out_b"]     # ordre de model.parameters() dans train.py
+
+
+def depuis_ckpt_torch(chemin, p, opt, nb):
+    """Point de reprise de train.py -> (poids, etat Adam, epoque, meilleure, poids de la meilleure)."""
+    import torch
+    ck = torch.load(chemin, map_location="cpu", weights_only=False)
+    p = depuis_torch(ck["model"], p, nb)
+    st = opt.init(p)
+    etat = ck["opt"]["state"]
+    mu, nu = dict(st.inner_state[0].mu), dict(st.inner_state[0].nu)
+    pas = 0
+    for i, k in enumerate(ORDRE_TORCH):
+        if i in etat:
+            mu[k] = jnp.asarray(etat[i]["exp_avg"].numpy())
+            nu[k] = jnp.asarray(etat[i]["exp_avg_sq"].numpy())
+            pas = int(float(etat[i]["step"]))
+    adam = st.inner_state[0]._replace(count=jnp.asarray(pas, jnp.int32), mu=mu, nu=nu)
+    st = st._replace(count=jnp.asarray(pas, jnp.int32), inner_state=(adam,) + tuple(st.inner_state[1:]))
+    bp = depuis_torch(ck["best_state"], p, nb) if ck.get("best_state") else None
+    print(f"point de reprise PyTorch {chemin} : epoque {ck['epoch']}, {pas} pas d'Adam", flush=True)
+    return p, st, ck["epoch"], tuple(ck["best"]), (jax.tree.map(np.asarray, bp) if bp is not None else None)
+
+
+def vers_ckpt_torch(chemin, p, st, epoch, best, best_p, nb, hidden, ob_n, lr, epochs):
+    """Ecrit un point de reprise au format de train.py (que train.py reprend sur GPU)."""
+    import torch
+    sys.path.insert(0, ICI)
+    import train as T
+    m = T.Perspective(nb * BASE, hidden, ob_n, factorizer=True)
+    m.load_state_dict(vers_torch(p), strict=False)
+    opt = torch.optim.AdamW(m.parameters(), lr=lr, weight_decay=0.0)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs, eta_min=lr / 30)
+    adam = st.inner_state[0]
+    pas = float(np.asarray(adam.count))
+    for prm, k in zip(m.parameters(), ORDRE_TORCH):
+        opt.state[prm] = {"step": torch.tensor(pas),
+                          "exp_avg": torch.from_numpy(np.asarray(adam.mu[k], np.float32).copy()),
+                          "exp_avg_sq": torch.from_numpy(np.asarray(adam.nu[k], np.float32).copy())}
+    for _ in range(epoch):
+        sched.step()
+    bs = {n: v.clone() for n, v in m.state_dict().items()}
+    if best_p is not None:
+        m2 = T.Perspective(nb * BASE, hidden, ob_n, factorizer=True)
+        m2.load_state_dict(vers_torch(best_p), strict=False)
+        bs = m2.state_dict()
+    tmp = chemin + ".tmp"
+    torch.save({"model": m.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "epoch": epoch,
+                "best": list(best), "best_state": bs, "rng": torch.get_rng_state(), "rng_cuda": None}, tmp)
+    os.replace(tmp, chemin)
+
+
+# --------------------------------------------------------------------------
 # Entrainement
 # --------------------------------------------------------------------------
 
@@ -191,6 +247,8 @@ def main():
     ap.add_argument("--out", default="reseau.nnue")
     ap.add_argument("--save-pt", default="")
     ap.add_argument("--init", default="", help="poids .pt de train.py (ou greffe 4 -> 8 experts)")
+    ap.add_argument("--reprise-torch", default="", help="point de reprise .ckpt de train.py (session GPU precedente)")
+    ap.add_argument("--ckpt-torch", default="", help="ecrire aussi a chaque epoque un point de reprise pour train.py")
     ap.add_argument("--limite-s", type=float, default=0, help="arret propre apres ce temps (session)")
     ap.add_argument("--max-pas", type=int, default=0, help="essai de vitesse : arret apres N pas")
     ap.add_argument("--verifier", action="store_true", help="comparaison pas a pas avec train.py")
@@ -224,7 +282,10 @@ def main():
     opt = optax.inject_hyperparams(optax.adam)(learning_rate=a.lr, b1=0.9, b2=0.999, eps=1e-8)
     st = opt.init(p)
     first, best, best_p = 1, (1e9, 1e9, 0), None
-    if a.checkpoint and os.path.exists(a.checkpoint):
+    if a.reprise_torch and not (a.checkpoint and os.path.exists(a.checkpoint)):
+        p, st, e0, best, best_p = depuis_ckpt_torch(a.reprise_torch, p, opt, nb)
+        first = e0 + 1
+    elif a.checkpoint and os.path.exists(a.checkpoint):
         ck = pickle.load(open(a.checkpoint, "rb"))
         p, st = jax.tree.map(jnp.asarray, ck["p"]), jax.tree.map(jnp.asarray, ck["st"])
         first, best, best_p = ck["epoch"] + 1, tuple(ck["best"]), ck["best_p"]
@@ -289,6 +350,9 @@ def main():
             pickle.dump({"p": jax.tree.map(np.asarray, p), "st": jax.tree.map(np.asarray, st), "epoch": epoch,
                          "best": list(best), "best_p": best_p}, open(tmp, "wb"))
             os.replace(tmp, a.checkpoint)
+        if a.ckpt_torch:
+            vers_ckpt_torch(a.ckpt_torch, jax.tree.map(np.asarray, p), jax.tree.map(np.asarray, st), epoch, best,
+                            best_p, nb, a.hidden, ob_n, a.lr, a.epochs)
         if a.limite_s and time.time() - t0 > a.limite_s:
             print("===== LIMITE DE SESSION : arret, a reprendre dans la session suivante", flush=True)
             return
