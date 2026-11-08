@@ -17,6 +17,13 @@ def lancer(cmd):
     return p.wait()
 
 
+# Garde-fou : jamais d'entrainement sur processeur (dans un processus a part : il libere le TPU en sortant)
+_d = subprocess.run([sys.executable, '-c', 'import jax; print(jax.devices()[0].platform, jax.device_count())'],
+                    capture_output=True, text=True).stdout.strip().splitlines()
+print('machine :', _d, flush=True)
+if not _d or not _d[-1].startswith('tpu'):
+    sys.exit('PAS DE TPU : arret')
+
 tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(
     'https://codeload.github.com/ovnice-dev/onechess/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = glob.glob('/tmp/code/*/tools')[0]
