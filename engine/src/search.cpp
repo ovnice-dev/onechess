@@ -748,6 +748,16 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
         return (ss->ply >= MAX_PLY && !ss->inCheck) ? Eval::evaluate(pos) : VALUE_DRAW;
 
+    // Arret demande (10-11) : la quiescence doit aussi l'entendre. Dans une
+    // finale gagnee (deux dames contre un roi), les echecs tranquilles tires
+    // de la table et les parades du roi seul (jamais elaguees : pas de
+    // materiel hors pions) font exploser son arbre au-dela de 100 demi-coups.
+    // Sans ce test, le fil qui y tombait ne rendait plus jamais la main et le
+    // moteur ne jouait plus (bot : deux parties perdues au temps le 10-11).
+    // La valeur rendue est ignoree, comme dans search() apres un arret.
+    if (Threads.stop.load(std::memory_order_relaxed))
+        return VALUE_ZERO;
+
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
     // Deux profondeurs seulement en quiescence : 0 quand on donne encore les
