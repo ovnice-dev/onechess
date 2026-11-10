@@ -26,7 +26,7 @@ for cand in $(gh release list -R "$REPO" --limit 50 --json tagName,isPrerelease 
   K=${cand#candidat-}; NOM="Hebdo$K"
   CAND_URL=$(url "$cand" onechess.nnue)
   runs() { gh run list -R "$REPO" --workflow sprt_lot.yml --limit 200 --json databaseId,displayTitle,status,conclusion \
-             -q ".[] | select(.displayTitle | startswith(\"$NOM (vague \")) | select(.conclusion != \"cancelled\") | \"\(.databaseId) \(.status)\""; }
+             -q ".[] | select(.displayTitle | startswith(\"$NOM (vague \")) | select(.conclusion != \"cancelled\" and .conclusion != \"failure\" and .conclusion != \"startup_failure\") | \"\(.databaseId) \(.status)\""; }
   if runs | grep -qv ' completed$'; then echo "$NOM : vague en cours"; continue; fi
   D=etats/$NOM; rm -rf "$D"; mkdir -p "$D"
   v=0

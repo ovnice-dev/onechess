@@ -14,7 +14,7 @@ echo "$(date '+%d-%m %H:%M') DEBUT $NOM  opt1=[$OPT1] opt2=[$OPT2] $M x $P parti
 # reseau ne doit jamais etre reprise.
 DEPUIS=$(cat ci/ref_depuis.txt 2>/dev/null || echo 2000-01-01T00:00:00Z)
 trouve() { "$G" run list -R "$REPO" --workflow sprt_lot.yml --limit 100 --json databaseId,displayTitle,conclusion,createdAt \
-         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | select(.conclusion != \"cancelled\") | select(.createdAt >= \"$DEPUIS\") | .databaseId" | head -1; }
+         -q ".[] | select(.displayTitle | startswith(\"$NOM (vague $v,\")) | select(.conclusion != \"cancelled\" and .conclusion != \"failure\" and .conclusion != \"startup_failure\") | select(.createdAt >= \"$DEPUIS\") | .databaseId" | head -1; }
 while [ $v -le "$VMAX" ]; do
   id=$(trouve)     # vague deja lancee par un pilote precedent : on la reprend
   if [ -z "$id" ]; then

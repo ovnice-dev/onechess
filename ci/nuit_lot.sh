@@ -8,7 +8,7 @@ G="/c/Program Files/GitHub CLI/gh.exe"; REPO=ovnice-dev/onechess
 NT=${1:-12}; NV=${2:-3}
 DEPUIS=$(cat ci/ref_depuis.txt)
 deja=$("$G" run list -R $REPO --workflow sprt_lot.yml --limit 200 --json displayTitle,createdAt,conclusion \
-       -q ".[] | select(.createdAt >= \"$DEPUIS\") | select(.conclusion != \"cancelled\") | .displayTitle")
+       -q ".[] | select(.createdAt >= \"$DEPUIS\") | select(.conclusion != \"cancelled\" and .conclusion != \"failure\" and .conclusion != \"startup_failure\") | .displayTitle")
 k=0
 while IFS='|' read -r nom opts bornes m p vmax opt2 mode; do
   [ -z "$nom" ] && continue; case "$nom" in \#*) continue;; esac
