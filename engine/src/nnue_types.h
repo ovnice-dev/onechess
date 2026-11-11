@@ -11,10 +11,10 @@ constexpr int INPUT_SIZE  = 768;
 // Taille de la couche cachee. Fixee a la compilation : l'accumulateur et
 // toutes les boucles SIMD en dependent. Pour essayer une autre taille,
 // compiler un binaire a part :
-//   EXTRA=-DONE_HIDDEN_SIZE=1024 OUT=bin/onechess1024.exe ./build.sh release
+//   EXTRA=-DONE_HIDDEN_SIZE=512 OUT=bin/onechess512.exe ./build.sh release
 // Le chargeur refuse tout reseau dont l'en-tete annonce une autre taille.
 #ifndef ONE_HIDDEN_SIZE
-    #define ONE_HIDDEN_SIZE 512
+    #define ONE_HIDDEN_SIZE 1024
 #endif
 constexpr int HIDDEN_SIZE = ONE_HIDDEN_SIZE;
 
