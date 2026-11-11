@@ -34,6 +34,21 @@ from dataclasses import dataclass, field
 import chess
 import chess.engine
 
+# Les constantes de reglage du moteur sont cachees de sa liste "uci" depuis le
+# 4-11 (toujours reglables par setoption). python-chess refuse une option non
+# annoncee : on la declare a la volee. Sans cela (bogue trouve le 11-11), les
+# options cachees etaient ignorees et les tests opposaient le moteur a lui-meme.
+_setoption_orig = chess.engine.UciProtocol._setoption
+
+
+def _setoption_cachee(self, name, value):
+    if name not in self.options:
+        self.options[name] = chess.engine.Option(name, "string", None, None, None, [])
+    return _setoption_orig(self, name, value)
+
+
+chess.engine.UciProtocol._setoption = _setoption_cachee
+
 # Le repertoire du script n'est pas toujours dans sys.path quand
 # multiprocessing relance l'interpreteur par spawn.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -114,10 +129,7 @@ def _open_engine(spec, hash_mb, threads):
     if "Threads" in eng.options:
         opts["Threads"] = threads
     for k, v in spec.options.items():
-        if k in eng.options:
-            opts[k] = v
-        else:
-            print(f"[avertissement] {spec.name} ne connait pas l'option {k}", file=sys.stderr)
+        opts[k] = v
     if opts:
         eng.configure(opts)
     return eng
