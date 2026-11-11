@@ -25,3 +25,5 @@ timeout 340m python -u tools/spsa.py --engine ./onechess --net reseau/onechess.n
     --seed $S --workers "$(nproc)" $MODE --hash 16 --params $(cat "${PARAMS}") \
     2>&1 | tee ci_out/spsa_m${MORCEAU}.log | grep -E "paires|SPSA|Erreur|Error" | tail -40
 ls -la ci_out
+# Un SPSA sans resultat doit echouer (le 11-11, 20 morceaux ont plante en silence)
+[ -s ci_out/spsa_m${MORCEAU}.json ] || { echo "AUCUN RESULTAT : voir ci_out/spsa_m${MORCEAU}.log"; tail -5 ci_out/spsa_m${MORCEAU}.log; exit 1; }
