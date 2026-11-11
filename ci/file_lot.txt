@@ -1,3 +1,4 @@
+FinalvsA|EvalFile=reseau/essais/kaggle/final_n5_1024.nnue|0 5|10|150|20||tc:10+0.1;x1=-DONE_HIDDEN_SIZE=1024
 R1024HSvsR1024|EvalFile=reseau/essais/local/r1024hs_perm.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r1024_n5_mat4_o4.nnue|tc:10+0.1;x1=-DONE_HIDDEN_SIZE=1024;x2=-DONE_HIDDEN_SIZE=1024
 ComboTriA|R6Margin=100 CorrExpert=1 RfpCorr=32|0 3|10|150|20||tc:10+0.1
 E8vsR|EvalFile=reseau/essais/local/e8_n5_mat8_o4.nnue|0 5|10|150|20|EvalFile=reseau/essais/local/r_n5_mat4_o4.nnue|tc:10+0.1
