@@ -87,6 +87,13 @@ def multi_chaud(idx, n):
 
 
 DENSE = False      # --ft-dense : 1re couche en produits de matrices (TPU)
+# --menaces 1 (phase 10, C) : entrees "menaces completes" (59 808, tools/menaces_completes.py),
+# table th de (DIM + 1) x hidden ajoutee a la 1re couche ; la ligne DIM (remplissage) reste nulle.
+# Indices calcules sur l'hote (indexeur C++) et passes avec le lot : r = (positions, iw, ib).
+MENACES = False
+K_MEN = 64
+DIM_MEN = 59808
+CLIP_TH = 127 / QA   # poids des menaces en int8 dans le moteur (comme Stockfish), meme echelle QA
 
 
 def indices(codes, sqs, persp, nb):
@@ -137,14 +144,19 @@ def entrees_denses(r, nb, ob_n, lam):
 
 
 def predire(p, r, nb, ob_n, lam):
+    if MENACES:
+        r, iw, ib = r
+        tw, tb = p["th"][iw].sum(1), p["th"][ib].sum(1)
+    else:
+        tw = tb = 0.0
     if DENSE:
         fw, fb, xw, xb, stm, ob, sc, tg = entrees_denses(r, nb, ob_n, lam)
         hp = jax.lax.Precision.HIGHEST
         n = nb * BASE
         aw = (jnp.matmul(fw, p["ft"][:n], precision=hp) + jnp.matmul(xw, p["ft_v"][:BASE], precision=hp)
-              + p["ft_bias"])
+              + p["ft_bias"] + tw)
         ab = (jnp.matmul(fb, p["ft"][:n], precision=hp) + jnp.matmul(xb, p["ft_v"][:BASE], precision=hp)
-              + p["ft_bias"])
+              + p["ft_bias"] + tb)
         s = stm[:, None] == 0
         us, them = jnp.where(s, aw, ab), jnp.where(s, ab, aw)
         x = jnp.concatenate([jnp.clip(us, 0, 1), jnp.clip(them, 0, 1)], axis=1)
@@ -165,8 +177,8 @@ def predire(p, r, nb, ob_n, lam):
         ab = (jnp.matmul(multi_chaud(fb, nf), p["ft"], precision=hp)
               + jnp.matmul(multi_chaud(bb, nv), p["ft_v"], precision=hp) + p["ft_bias"])
     else:
-        aw = p["ft"][fw].sum(1) + p["ft_v"][bw].sum(1) + p["ft_bias"]
-        ab = p["ft"][fb].sum(1) + p["ft_v"][bb].sum(1) + p["ft_bias"]
+        aw = p["ft"][fw].sum(1) + p["ft_v"][bw].sum(1) + p["ft_bias"] + tw
+        ab = p["ft"][fb].sum(1) + p["ft_v"][bb].sum(1) + p["ft_bias"] + tb
     s = stm[:, None] == 0
     us, them = jnp.where(s, aw, ab), jnp.where(s, ab, aw)
     x = jnp.concatenate([jnp.clip(us, 0, 1), jnp.clip(them, 0, 1)], axis=1)
@@ -186,6 +198,8 @@ def borner(p, nb):
     p["ft_v"] = jnp.clip(p["ft_v"], -CLIP, CLIP).at[BASE].set(0.0)
     p["ft_bias"] = jnp.clip(p["ft_bias"], -CLIP, CLIP)
     p["out_w"] = jnp.clip(p["out_w"], -CLIP, CLIP)
+    if "th" in p:
+        p["th"] = jnp.clip(p["th"], -CLIP_TH, CLIP_TH).at[DIM_MEN].set(0.0)
     return p
 
 
@@ -196,7 +210,8 @@ def borner(p, nb):
 def nouveaux(nb, hidden, ob_n, graine):
     k = jax.random.split(jax.random.PRNGKey(graine), 3)
     n_in = nb * BASE
-    return borner({
+    th = {"th": jnp.zeros((DIM_MEN + 1, hidden))} if MENACES else {}   # a zero : greffe sans effet au depart
+    return borner({**th,
         "ft": 0.01 * jax.random.normal(k[0], (n_in + 1, hidden)),
         "ft_v": 0.01 * jax.random.normal(k[1], (BASE + 1, hidden)),
         "ft_bias": jnp.zeros(hidden),
@@ -319,6 +334,18 @@ def fichiers_epoque(n, k, epoch, seed):
     return out
 
 
+def avec_menaces(recs):
+    """Lot de positions -> (positions, indices blancs, indices noirs) si --menaces, sinon le lot."""
+    if not MENACES:
+        return recs
+    sys.path.insert(0, ICI)
+    import menaces_completes as M
+    iw, ib, m = M.lot(recs, K_MEN)
+    if m > K_MEN:
+        print(f"[menaces] {m} paires actives > {K_MEN} : tronque", flush=True)
+    return recs, iw.astype(np.int32), ib.astype(np.int32)
+
+
 def charger(fichiers):
     return np.concatenate([np.fromfile(f, dtype=np.uint8).reshape(-1, 32) for f in fichiers])
 
@@ -347,9 +374,11 @@ def main():
     ap.add_argument("--max-pas", type=int, default=0, help="essai de vitesse : arret apres N pas")
     ap.add_argument("--verifier", action="store_true", help="comparaison pas a pas avec train.py")
     ap.add_argument("--ft-dense", type=int, default=0, help="1 = 1re couche en produits de matrices denses (TPU)")
+    ap.add_argument("--menaces", type=int, default=0, help="1 = entrees menaces completes (phase 10, C)")
     a = ap.parse_args()
-    global DENSE
+    global DENSE, MENACES
     DENSE = bool(a.ft_dense)
+    MENACES = bool(a.menaces)
     if a.verifier:
         return verifier(a)
     t0 = time.time()
@@ -364,9 +393,10 @@ def main():
     B = a.batch - a.batch % nd
 
     files = sorted(glob.glob(a.stream))
-    val = jax.device_put(charger(files[-1:])[:a.val], NamedSharding(mesh, P()))
+    val = jax.device_put(avec_menaces(charger(files[-1:])[:a.val]), NamedSharding(mesh, P()))
     train = files[:-1]
-    print(f"{len(train)} fichiers d'entrainement, {val.shape[0]:,} de validation", flush=True)
+    NVAL = (val[0] if MENACES else val).shape[0]
+    print(f"{len(train)} fichiers d'entrainement, {NVAL:,} de validation", flush=True)
 
     p = nouveaux(nb, a.hidden, ob_n, a.seed)
     if a.init:
@@ -403,10 +433,10 @@ def main():
     def validation(p):
         sl = se = 0.0
         mx = 0.0
-        for i in range(0, val.shape[0], 65536):
-            l, e, m = evaluer(p, val[i:i + 65536])
+        for i in range(0, NVAL, 65536):
+            l, e, m = evaluer(p, jax.tree.map(lambda v: v[i:i + 65536], val))
             sl, se, mx = sl + float(l), se + float(e), max(mx, float(m))
-        return sl / val.shape[0], se / val.shape[0], mx
+        return sl / NVAL, se / NVAL, mx
 
     for epoch in range(first, a.epochs + 1):
         eta_min = a.lr / 30
@@ -422,7 +452,7 @@ def main():
             recs = charger([train[i] for i in ordre[g:g + a.chunk_files]])
             perm = rng.permutation(len(recs))
             for k in range(len(recs) // B):
-                r = jax.device_put(recs[perm[k * B:(k + 1) * B]], lot)
+                r = jax.device_put(avec_menaces(recs[perm[k * B:(k + 1) * B]]), lot)
                 p, st, l = pas(p, st, r)
                 n_pas += 1
                 n_pos += B
@@ -447,7 +477,7 @@ def main():
             pickle.dump({"p": jax.tree.map(np.asarray, p), "st": jax.tree.map(np.asarray, st), "epoch": epoch,
                          "best": list(best), "best_p": best_p}, open(tmp, "wb"))
             os.replace(tmp, a.checkpoint)
-        if a.ckpt_torch:
+        if a.ckpt_torch and not MENACES:
             vers_ckpt_torch(a.ckpt_torch, jax.tree.map(np.asarray, p), jax.tree.map(np.asarray, st), epoch, best,
                             best_p, nb, a.hidden, ob_n, a.lr, a.epochs)
         if a.limite_s and time.time() - t0 > a.limite_s:
@@ -456,6 +486,9 @@ def main():
     _, _, mx = validation(jax.tree.map(jnp.asarray, best_p))
     print(f"export de l'epoque {best[2]} ({best[1]:.1f} cp)", flush=True)
     exporter(best_p, nb, a.hidden, ob_n, a.out, int(round(mx * QA)), a.save_pt)
+    if MENACES:   # format moteur des menaces : a venir (etape 4) ; poids gardes a part en attendant
+        np.save(a.out + ".menaces.npy", np.asarray(best_p["th"], dtype=np.float32))
+        print("poids des menaces ecrits :", a.out + ".menaces.npy", flush=True)
 
 
 # --------------------------------------------------------------------------
