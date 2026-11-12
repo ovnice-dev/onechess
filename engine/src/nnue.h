@@ -117,5 +117,10 @@ Value output(const Accumulator& acc, Color stm, int bucket);
 // Met l'accumulateur a jour de la facon la moins couteuse possible, puis lit.
 Value evaluate(const Position& pos);
 
+// Menaces completes (phase 10) : vrai si le reseau charge en a ; ft_on_move() est
+// appele par do_move() et do_null_move() pour noter les menaces que le coup change.
+extern bool FullThreatsOn;
+void        ft_on_move(const Position& pos);
+
 }  // namespace NNUE
 }  // namespace one

@@ -1,4 +1,5 @@
 #include "position.h"
+#include "nnue.h"
 #include "tune.h"
 #include "prof.h"
 
@@ -788,6 +789,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
         }
     }
 
+    if (NNUE::FullThreatsOn)
+        NNUE::ft_on_move(*this);
+
     assert(pos_is_ok());
 }
 
@@ -900,6 +904,9 @@ void Position::do_null_move(StateInfo& newSt) {
     set_check_info();
 
     st->repetition = 0;
+
+    if (NNUE::FullThreatsOn)
+        NNUE::ft_on_move(*this);
 
     assert(pos_is_ok());
 }

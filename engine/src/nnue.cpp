@@ -2,6 +2,7 @@
 #include "prof.h"
 
 #include <algorithm>
+#include <x86intrin.h>
 #include <iostream>
 #include <cassert>
 #include <cstring>
@@ -545,6 +546,7 @@ std::uint32_t generation() { return NetGen; }
 void unload() {
     delete Net;
     Net = nullptr;
+    FullThreatsOn = false;
     NetPath.clear();
     ++NetGen;
 }
@@ -849,6 +851,7 @@ bool load(const std::string& path) {
 
     delete Net;
     Net     = net;
+    FullThreatsOn = net->fullThreats;
     NetPath = path;
     ++NetGen;      // invalide tout accumulateur calcule avec le reseau precedent
     return true;
@@ -1052,9 +1055,12 @@ constexpr int FT_MAXK = 128;   // plus de menaces actives que jamais vu (48 sur 
 
 struct FtLuts {
     std::uint32_t lut1[12][12][2];
-    std::uint16_t lut2[6][64][64];
+    std::uint16_t lut2[6][64][64];   // reference, sert a verifier ft_off()
+    std::uint16_t base[6][64];       // depart de chaque (type, case) : 768 octets, toujours en cache
 };
 FtLuts* FtTab = nullptr;
+
+inline int ft_off(int pt, int fr, int to);
 
 void init_full_threats() {
     static const int NB_CIBLES[6] = {4, 10, 8, 8, 10, 0};
@@ -1076,6 +1082,7 @@ void init_full_threats() {
                 const Bitboard a = pt != 0 ? vide(pt, fr, 0) : vide(0, fr, to < fr ? BLACK : WHITE);
                 t->lut2[pt][fr][to] = std::uint16_t(off + popcount(((Bitboard(1) << to) - 1) & a));
             }
+            t->base[pt][fr] = std::uint16_t(off);
             if (pt != 0)
                 off += popcount(vide(pt, fr, 0));
             else if (fr >= 8 && fr <= 55)
@@ -1100,9 +1107,24 @@ void init_full_threats() {
     }
     assert(cumul == FULL_THREAT_DIM);
     FtTab = t;
+#ifndef NDEBUG
+    for (int pt = 0; pt < 6; ++pt)
+        for (int fr = 0; fr < 64; ++fr)
+            for (int to = 0; to < 64; ++to)
+                assert(ft_off(pt, fr, to) == t->lut2[pt][fr][to]);
+#endif
 }
 
 inline int ft_code(Piece pc) { return (color_of(pc) == BLACK) * 6 + (type_of(pc) - 1); }
+
+// Meme valeur que lut2[pt][fr][to], sans la table de 49 Ko (chassee du cache par
+// les lignes de poids) : depart + rang de la case visee dans les attaques sur
+// echiquier vide (tables d'attaques de la generation de coups, toujours chaudes).
+inline int ft_off(int pt, int fr, int to) {
+    const Bitboard a = pt == 0 ? pawn_attacks_bb(to < fr ? BLACK : WHITE, Square(fr))
+                               : PseudoAttacks[pt + 1][fr];
+    return FtTab->base[pt][fr] + popcount(a & ((Bitboard(1) << to) - 1));
+}
 
 // Listes triees des menaces actives, vues des blancs (w) et des noirs (b)
 void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, int& nb) {
@@ -1120,9 +1142,9 @@ void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, 
             const Square        to = pop_lsb(t);
             const int           d  = ft_code(pos.piece_on(to));
             const int           f = int(fr), tt = int(to), fb = f ^ 56, tb = tt ^ 56;
-            const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + FtTab->lut2[ta][f][tt];
+            const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + ft_off(ta, f, tt);
             const std::uint32_t ib =
-              FtTab->lut1[(a + 6) % 12][(d + 6) % 12][fb < tb] + FtTab->lut2[ta][fb][tb];
+              FtTab->lut1[(a + 6) % 12][(d + 6) % 12][fb < tb] + ft_off(ta, fb, tb);
             if (iw < std::uint32_t(FULL_THREAT_DIM) && nw < FT_MAXK)
                 w[nw++] = std::uint16_t(iw);
             if (ib < std::uint32_t(FULL_THREAT_DIM) && nb < FT_MAXK)
@@ -1133,11 +1155,24 @@ void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, 
     std::sort(b, b + nb);
 }
 
+// Changements de menaces d'un coup, codes independamment de la perspective :
+// case de l'attaquant (6 bits) | case visee << 6 | code attaquant << 12 |
+// code attaque << 16 | bit 31 = menace ajoutee (sinon retiree).
+constexpr int FT_MAXD = 192;
+#ifndef FT_SANS_ANNUL
+#define FT_SANS_ANNUL 0
+#endif
+constexpr int FT_COMB = 256;
+#ifndef FT_PF_DIST
+#define FT_PF_DIST 4
+#endif   // changements cumules au plus (au-dela : recalcul complet)
+
 struct alignas(64) ThreatAcc {
     std::int16_t     v[COLOR_NB][HIDDEN_SIZE];
-    std::uint16_t    list[COLOR_NB][FT_MAXK];
-    int              n[COLOR_NB];
-    const StateInfo* owner;
+    std::uint32_t    dirty[FT_MAXD];
+    int              nd;
+    const StateInfo* dirtyOwner;   // noeud dont dirty[] decrit le coup
+    const StateInfo* owner;        // noeud dont v[] est l'accumulateur
 };
 thread_local ThreatAcc* ThrPool = nullptr;   // une case par place du reservoir des accumulateurs
 
@@ -1147,7 +1182,52 @@ inline const std::int8_t* ft_row(int idx) {
 
 // d = s - lignes(sub) + lignes(add), poids int8 etendus en int16
 void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, const int* add, int na) {
-#if defined(__AVX2__)
+#if defined(__AVX2__) && !defined(FT_APPLY16)
+    // Tuiles de 64 valeurs : une ligne de cache entiere de chaque ligne de poids par
+    // tuile, et prechargement de la ligne de cache suivante (table hors cache).
+    const std::int8_t* rs[FT_COMB];
+    const std::int8_t* ra[FT_COMB];
+    for (int k = 0; k < ns; ++k)
+        rs[k] = ft_row(sub[k]);
+    for (int k = 0; k < na; ++k)
+        ra[k] = ft_row(add[k]);
+    for (int j = 0; j < HIDDEN_SIZE; j += 64)
+    {
+        if (j + FT_PF_DIST * 64 < HIDDEN_SIZE)
+        {
+            for (int k = 0; k < ns; ++k)
+                __builtin_prefetch(rs[k] + j + FT_PF_DIST * 64, 0, 0);
+            for (int k = 0; k < na; ++k)
+                __builtin_prefetch(ra[k] + j + FT_PF_DIST * 64, 0, 0);
+        }
+        __m256i v0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
+        __m256i v1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j + 16));
+        __m256i v2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j + 32));
+        __m256i v3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j + 48));
+        for (int k = 0; k < ns; ++k)
+        {
+            const __m256i w = _mm256_load_si256(reinterpret_cast<const __m256i*>(rs[k] + j));
+            const __m256i x = _mm256_load_si256(reinterpret_cast<const __m256i*>(rs[k] + j + 32));
+            v0 = _mm256_sub_epi16(v0, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(w)));
+            v1 = _mm256_sub_epi16(v1, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(w, 1)));
+            v2 = _mm256_sub_epi16(v2, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(x)));
+            v3 = _mm256_sub_epi16(v3, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(x, 1)));
+        }
+        for (int k = 0; k < na; ++k)
+        {
+            const __m256i w = _mm256_load_si256(reinterpret_cast<const __m256i*>(ra[k] + j));
+            const __m256i x = _mm256_load_si256(reinterpret_cast<const __m256i*>(ra[k] + j + 32));
+            v0 = _mm256_add_epi16(v0, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(w)));
+            v1 = _mm256_add_epi16(v1, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(w, 1)));
+            v2 = _mm256_add_epi16(v2, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(x)));
+            v3 = _mm256_add_epi16(v3, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(x, 1)));
+        }
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v0);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 16), v1);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 32), v2);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 48), v3);
+    }
+#elif defined(__AVX2__)
     for (int j = 0; j < HIDDEN_SIZE; j += 16)
     {
         __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
@@ -1184,86 +1264,327 @@ void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, co
 
 alignas(64) const std::int16_t FtZero[HIDDEN_SIZE] = {};
 
-// Accumulateur des menaces de la position courante (calcule au besoin)
-const ThreatAcc& threat_acc(const Position& pos) {
+// Indice d'une menace codee, vue de la perspective p (DIM si exclue)
+inline int ft_index(std::uint32_t e, Color p) {
+    int fr = int(e & 63), to = int((e >> 6) & 63), a = int((e >> 12) & 15), d = int((e >> 16) & 15);
+    if (p == BLACK)
+        fr ^= 56, to ^= 56, a = (a + 6) % 12, d = (d + 6) % 12;
+    return int(FtTab->lut1[a][d][fr < to] + ft_off(a % 6, fr, to));
+}
+
+// Attaquants (hors rois) d'une case, sur un plateau donne par ses bitboards
+inline Bitboard ft_attackers(Square z, Bitboard occ, const Bitboard* bt, const Bitboard* bc) {
+    return (pawn_attacks_bb(BLACK, z) & bt[PAWN] & bc[WHITE]) | (pawn_attacks_bb(WHITE, z) & bt[PAWN] & bc[BLACK])
+         | (attacks_bb<KNIGHT>(z) & bt[KNIGHT]) | (attacks_bb<BISHOP>(z, occ) & (bt[BISHOP] | bt[QUEEN]))
+         | (attacks_bb<ROOK>(z, occ) & (bt[ROOK] | bt[QUEEN]));
+}
+
+}  // namespace
+
+bool FullThreatsOn = false;
+
+// Appele a la fin de do_move et de do_null_move quand le reseau a des menaces
+// completes : menaces retirees et ajoutees par le coup. Seules peuvent changer
+// les menaces des pieces posees sur une case touchee (Z) et celles des pieces
+// qui attaquent une case de Z avant ou apres le coup (glisseurs decouverts ou
+// bloques compris) : on enumere ces menaces sur les deux plateaux et on garde
+// la difference.
+void ft_on_move(const Position& pos) {
+    StateInfo* st = pos.state();
+    if (st->accIndex < 0)
+        return;
+    ThreatAcc* pool = ThrPool;   // thread_local lu une fois (MinGW : chaque acces est un appel)
+    if (!pool)
+        pool = ThrPool = new ThreatAcc[ACC_POOL];
     if (!FtTab)
         init_full_threats();
-    if (!ThrPool)
-        ThrPool = new ThreatAcc[ACC_POOL];
-    thread_local ThreatAcc scratch;
+    ThreatAcc&        t  = pool[st->accIndex];
+    const DirtyPiece& dp = st->dirtyPiece;
+    t.nd                 = 0;
+    t.dirtyOwner         = st;
+    if (dp.count == 0)
+        return;
+
+    // Plateau d'avant le coup : celui d'apres, moins les pieces arrivees, plus les pieces parties
+    Bitboard bt[PIECE_TYPE_NB], bc[COLOR_NB], Z = 0;
+    for (int i = 0; i < PIECE_TYPE_NB; ++i)
+        bt[i] = pos.pieces(PieceType(i));
+    bc[WHITE] = pos.pieces(WHITE), bc[BLACK] = pos.pieces(BLACK);
+    for (int i = 0; i < dp.count; ++i)
+        if (dp.to[i] != SQ_NONE)
+        {
+            const Bitboard b = square_bb(dp.to[i]);
+            bt[type_of(dp.piece[i])] ^= b, bc[color_of(dp.piece[i])] ^= b, Z |= b;
+        }
+    for (int i = 0; i < dp.count; ++i)
+        if (dp.from[i] != SQ_NONE)
+        {
+            const Bitboard b = square_bb(dp.from[i]);
+            bt[type_of(dp.piece[i])] ^= b, bc[color_of(dp.piece[i])] ^= b, Z |= b;
+        }
+    const Bitboard occB = bc[WHITE] | bc[BLACK], occA = pos.pieces();
+    Bitboard       btA[PIECE_TYPE_NB], bcA[COLOR_NB] = {pos.pieces(WHITE), pos.pieces(BLACK)};
+    for (int i = 0; i < PIECE_TYPE_NB; ++i)
+        btA[i] = pos.pieces(PieceType(i));
+
+    Bitboard A = Z;
+    for (Bitboard z = Z; z;)
+    {
+        const Square s = pop_lsb(z);
+        A |= ft_attackers(s, occB, bt, bc) | ft_attackers(s, occA, btA, bcA);
+    }
+
+    auto avant = [&](Square s) -> Piece {
+        if (!(Z & s))
+            return pos.piece_on(s);
+        for (int i = 0; i < dp.count; ++i)
+            if (dp.from[i] == s)
+                return dp.piece[i];
+        return NO_PIECE;
+    };
+    auto code = [](Square s, Square to, Piece a, Piece d, bool ajout) {
+        return std::uint32_t(s) | std::uint32_t(to) << 6 | std::uint32_t(ft_code(a)) << 12
+             | std::uint32_t(ft_code(d)) << 16 | (ajout ? 0x80000000u : 0u);
+    };
+    int n = 0;
+    // Pieces des cases touchees : toutes leurs menaces d'avant retirees, d'apres ajoutees
+    // (le contenu d'une case touchee change toujours : rien a annuler)
+    for (Bitboard z = Z; z;)
+    {
+        const Square s = pop_lsb(z);
+        for (int etat = 0; etat < 2; ++etat)
+        {
+            const Piece pc = etat ? pos.piece_on(s) : avant(s);
+            if (pc == NO_PIECE || type_of(pc) == KING)
+                continue;
+            const Bitboard occ = etat ? occA : occB;
+            const Bitboard att =
+              (type_of(pc) == PAWN ? pawn_attacks_bb(color_of(pc), s) : attacks_bb(type_of(pc), s, occ)) & occ;
+            for (Bitboard x = att; x;)
+            {
+                const Square to = pop_lsb(x);
+                const Piece  q  = etat ? pos.piece_on(to) : avant(to);
+                if (type_of(q) != KING && n < FT_MAXD)
+                    t.dirty[n++] = code(s, to, pc, q, etat == 1);
+            }
+        }
+    }
+    // Autres pieces qui attaquent une case touchee : seules changent leurs menaces
+    // vers les cases touchees et le long des lignes ouvertes ou fermees
+    for (Bitboard b = A & ~Z & occA; b;)
+    {
+        const Square   s   = pop_lsb(b);
+        const Piece    pc  = pos.piece_on(s);
+        if (type_of(pc) == KING)
+            continue;
+        const bool     glisse = type_of(pc) >= BISHOP && type_of(pc) <= QUEEN;
+        const Bitboard aB = (glisse ? attacks_bb(type_of(pc), s, occB)
+                             : type_of(pc) == PAWN ? pawn_attacks_bb(color_of(pc), s) : attacks_bb(type_of(pc), s, 0)) & occB;
+        const Bitboard aA = (glisse ? attacks_bb(type_of(pc), s, occA)
+                             : type_of(pc) == PAWN ? pawn_attacks_bb(color_of(pc), s) : attacks_bb(type_of(pc), s, 0)) & occA;
+        for (Bitboard x = (aB & ~aA) | (aB & aA & Z); x;)
+        {
+            const Square to = pop_lsb(x);
+            const Piece  q  = avant(to);
+            if (type_of(q) != KING && n < FT_MAXD)
+                t.dirty[n++] = code(s, to, pc, q, false);
+        }
+        for (Bitboard x = (aA & ~aB) | (aB & aA & Z); x;)
+        {
+            const Square to = pop_lsb(x);
+            const Piece  q  = pos.piece_on(to);
+            if (type_of(q) != KING && n < FT_MAXD)
+                t.dirty[n++] = code(s, to, pc, q, true);
+        }
+    }
+#ifdef FT_PREFETCH
+    // Prechargement des lignes que l'evaluation lira (table de 61 Mo, hors cache)
+    for (int k = 0; k < n; ++k)
+        for (Color c : {WHITE, BLACK})
+        {
+            const int idx = ft_index(t.dirty[k], c);
+            if (idx < FULL_THREAT_DIM)
+            {
+                const char* r = reinterpret_cast<const char*>(ft_row(idx));
+                for (int l = 0; l < HIDDEN_SIZE; l += 64)
+                    __builtin_prefetch(r + l, 0, FT_PREFETCH);
+            }
+        }
+#endif
+#ifdef FT_STATS
+    { static std::uint64_t mv = 0, tot = 0; static struct B { ~B() { std::fprintf(stderr, "FT_STATS coups %llu changements/coup %.1f\n", (unsigned long long) mv, double(tot) / std::max<std::uint64_t>(1, mv)); } } aff; ++mv; tot += n; }
+#endif
+    t.nd = n;
+}
+
+namespace {
+
+// Accumulateur des menaces de la position courante (calcule au besoin) : on
+// remonte jusqu'au dernier ancetre calcule en cumulant les changements de
+// chaque coup, puis une seule passe ; sinon recalcul complet.
+const ThreatAcc& threat_acc(const Position& pos) {
+    PROF_SCOPE(NNUE_APPLY);
+    if (!FtTab)
+        init_full_threats();
+    ThreatAcc* pool = ThrPool;
+    if (!pool)
+        pool = ThrPool = new ThreatAcc[ACC_POOL];
     StateInfo* st = pos.state();
-    ThreatAcc& t  = st->accIndex >= 0 ? ThrPool[st->accIndex] : scratch;
+    if (st->accIndex < 0)
+    {
+        thread_local ThreatAcc scratch;
+        st->thrGen = 0;
+        ThreatAcc& t = scratch;
+        std::uint16_t lw[FT_MAXK], lb[FT_MAXK];
+        int           nw, nbk;
+        ft_lists(pos, lw, nw, lb, nbk);
+        int aw[FT_MAXK], ab[FT_MAXK];
+        for (int k = 0; k < nw; ++k) aw[k] = lw[k];
+        for (int k = 0; k < nbk; ++k) ab[k] = lb[k];
+        ft_apply(FtZero, t.v[WHITE], nullptr, 0, aw, nw);
+        ft_apply(FtZero, t.v[BLACK], nullptr, 0, ab, nbk);
+        return t;
+    }
+    ThreatAcc& t = pool[st->accIndex];
     if (st->accIndex >= 0 && st->thrGen == NetGen && t.owner == st)
         return t;
 
-    ft_lists(pos, t.list[WHITE], t.n[WHITE], t.list[BLACK], t.n[BLACK]);
-
-    // Dernier ancetre calcule (8 demi-coups au plus) : la difference de sa liste
-    // avec celle du noeud suffit, sans les noeuds intermediaires (souvent jamais
-    // evalues : coup de la table, noeud en echec).
-    const StateInfo* pr = nullptr;
-    if (st->accIndex > 0)
-    {
-        const StateInfo* a = st->previous;
-        for (int k = 0; k < 8 && a && a->accIndex >= 0; ++k, a = a->previous)
-            if (a->thrGen == NetGen && ThrPool[a->accIndex].owner == a)
-            {
-                pr = a;
-                break;
-            }
-    }
-    const bool parentOk = pr != nullptr;
 #ifdef FT_STATS
-    static std::uint64_t nEval = 0, nOk = 0, nRows = 0;
-    static struct Aff { ~Aff() { std::fprintf(stderr, "FT_STATS evals %llu parent_ok %.1f %% lignes/eval %.1f\n", (unsigned long long) nEval, 100.0 * nOk / std::max<std::uint64_t>(1, nEval), double(nRows) / std::max<std::uint64_t>(1, nEval)); } } aff;
-    ++nEval; nOk += parentOk;
+    static std::uint64_t cy[4] = {0, 0, 0, 0}, nca = 0;
+    static struct C { ~C() { std::fprintf(stderr, "FT_CYCLES appels %llu chaine %.0f combinaison %.0f application %.0f dont-lecture %.0f\n", (unsigned long long) nca, double(cy[0]) / nca, double(cy[1]) / nca, double(cy[2]) / nca, double(cy[3]) / nca); } } affc;
+    ++nca;
+    std::uint64_t c0 = __rdtsc(), cc = 0, ca = 0;
+#endif
+    thread_local std::int8_t* cntTabTL = nullptr;
+    std::int8_t* cntTab = cntTabTL;
+    if (!cntTab)
+        cntTab = cntTabTL = new std::int8_t[FULL_THREAT_DIM]();
+    const StateInfo* chain[16];
+    int              nc  = 0;
+    const StateInfo* anc = nullptr;
+    for (const StateInfo* s = st; s && s->accIndex >= 0 && nc < 16; s = s->previous)
+    {
+        const ThreatAcc& sl = pool[s->accIndex];
+        if (s != st && s->thrGen == NetGen && sl.owner == s)
+        {
+            anc = s;
+            break;
+        }
+        if (sl.dirtyOwner != s)
+            break;
+        chain[nc++] = s;
+    }
+
+#ifdef FT_STATS
+    std::uint64_t c1 = __rdtsc();
+    cy[0] += c1 - c0;
 #endif
     for (Color c : {WHITE, BLACK})
     {
-        int                 sub[2 * FT_MAXK], add[2 * FT_MAXK], ns = 0, na = 0;
+#ifdef FT_STATS
+        std::uint64_t c2 = __rdtsc();
+#endif
+        int add[FT_COMB], sub[FT_COMB], na = 0, ns = 0;
         const std::int16_t* src = FtZero;
-        if (parentOk)
+        bool                full = anc == nullptr;
+        if (!full)
         {
-            const ThreatAcc& p = ThrPool[pr->accIndex];
-            src                = p.v[c];
-            // difference de deux listes triees
-            int                  i = 0, j = 0;
-            const std::uint16_t *a = p.list[c], *b = t.list[c];
-            while (i < p.n[c] || j < t.n[c])
+            // changements cumules ; une menace ajoutee puis retiree s'annule
+            int code[FT_COMB], m = 0;
+#ifdef FT_STATS
+            std::uint64_t g0 = __rdtsc();
+#endif
+            for (int k = 0; k < nc && !full; ++k)
             {
-                if (j >= t.n[c] || (i < p.n[c] && a[i] < b[j]))
-                    sub[ns++] = a[i++];
-                else if (i >= p.n[c] || b[j] < a[i])
-                    add[na++] = b[j++];
-                else
-                    ++i, ++j;
+                const ThreatAcc& sl = pool[chain[k]->accIndex];
+                if (m + sl.nd > FT_COMB)
+                    full = true;
+                for (int q = 0; q < sl.nd && !full; ++q)
+                {
+                    const int idx = ft_index(sl.dirty[q], c);
+                    if (idx < FULL_THREAT_DIM)
+                        code[m++] = idx * 2 + int(sl.dirty[q] >> 31);
+                }
+            }
+#ifdef FT_STATS
+            cy[3] += __rdtsc() - g0;
+#endif
+            if (!full && (nc == 1 || FT_SANS_ANNUL))   // sans tri : un ajout et un retrait de la meme ligne s annulent dans la somme
+            {
+                for (int q = 0; q < m; ++q)
+                    if (code[q] & 1)
+                        add[na++] = code[q] >> 1;
+                    else
+                        sub[ns++] = code[q] >> 1;
+                src = pool[anc->accIndex].v[c];
+            }
+            else if (!full)
+            {
+                // Annulation sans tri : compteur par menace (60 Ko, remis a zero apres usage)
+                std::int8_t* cnt = cntTab;
+                for (int q = 0; q < m; ++q)
+                    cnt[code[q] >> 1] += (code[q] & 1) ? 1 : -1;
+                for (int q = 0; q < m; ++q)
+                {
+                    const int idx = code[q] >> 1;
+                    for (int net = cnt[idx]; net > 0; --net)
+                        add[na++] = idx;
+                    for (int net = cnt[idx]; net < 0; ++net)
+                        sub[ns++] = idx;
+                    cnt[idx] = 0;
+                }
+                src = pool[anc->accIndex].v[c];
+                if (na + ns > 48)   // repartir de zero coute moins cher
+                    full = true;
             }
         }
-        if (!parentOk || ns + na > t.n[c])   // repartir de zero coute moins cher
+        if (full)
         {
-            src = FtZero, ns = na = 0;
-            for (int k = 0; k < t.n[c]; ++k)
-                add[na++] = t.list[c][k];
+            std::uint16_t lw[FT_MAXK], lb[FT_MAXK];
+            int           nw, nbk;
+            ft_lists(pos, lw, nw, lb, nbk);
+            src = FtZero, ns = 0, na = 0;
+            const std::uint16_t* l = c == WHITE ? lw : lb;
+            for (int k = 0; k < (c == WHITE ? nw : nbk); ++k)
+                add[na++] = l[k];
         }
+#ifdef FT_STATS
+        { static std::uint64_t ev = 0, fu = 0, ro = 0, ch = 0;
+          static struct A { ~A() { std::fprintf(stderr, "FT_STATS persp-evals %llu complets %.1f %% lignes %.1f chaine %.2f\n", (unsigned long long) ev, 100.0 * fu / std::max<std::uint64_t>(1, ev), double(ro) / std::max<std::uint64_t>(1, ev), double(ch) / std::max<std::uint64_t>(1, ev)); } } aff;
+          ++ev; fu += full; ro += na + ns; ch += nc; }
+#endif
+#ifdef FT_STATS
+        std::uint64_t c3 = __rdtsc();
+        cc += c3 - c2;
+#endif
+#ifndef FT_NOAPPLY
         ft_apply(src, t.v[c], sub, ns, add, na);
 #ifdef FT_STATS
-        nRows += ns + na;
+        ca += __rdtsc() - c3;
+#endif
+#else
+        (void) src;
 #endif
     }
-    t.owner = st;
-    if (st->accIndex >= 0)
-        st->thrGen = NetGen;
+#ifdef FT_STATS
+    cy[1] += cc, cy[2] += ca;
+#endif
+    t.owner    = st;
+    st->thrGen = NetGen;
 #ifndef NDEBUG
-    // Preuve : la mise a jour par difference egale le recalcul complet
+    // Preuve : le calcul par changements egale le recalcul complet
     {
         thread_local ThreatAcc ref;
-        ft_lists(pos, ref.list[WHITE], ref.n[WHITE], ref.list[BLACK], ref.n[BLACK]);
+        std::uint16_t          lw[FT_MAXK], lb[FT_MAXK];
+        int                    nw, nbk;
+        ft_lists(pos, lw, nw, lb, nbk);
         for (Color c : {WHITE, BLACK})
         {
             int add[FT_MAXK];
-            for (int k = 0; k < ref.n[c]; ++k)
-                add[k] = ref.list[c][k];
-            ft_apply(FtZero, ref.v[c], nullptr, 0, add, ref.n[c]);
+            const int n = c == WHITE ? nw : nbk;
+            for (int k = 0; k < n; ++k)
+                add[k] = (c == WHITE ? lw : lb)[k];
+            ft_apply(FtZero, ref.v[c], nullptr, 0, add, n);
             assert(std::memcmp(ref.v[c], t.v[c], sizeof(ref.v[c])) == 0 && "menaces desynchronisees");
         }
     }
@@ -1273,8 +1594,8 @@ const ThreatAcc& threat_acc(const Position& pos) {
 
 // Sortie : accumulateur des pieces + accumulateur des menaces, puis la sortie habituelle
 Value output_full(const Accumulator& acc, const Position& pos, int bucket) {
-    const ThreatAcc&                t = threat_acc(pos);
-    thread_local Accumulator sum;
+    const ThreatAcc&       t = threat_acc(pos);
+    alignas(64) Accumulator sum;
     for (Color c : {WHITE, BLACK})
     {
 #if defined(__AVX2__)
