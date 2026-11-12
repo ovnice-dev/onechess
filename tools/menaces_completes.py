@@ -128,5 +128,74 @@ def _verifier():
     print(f"OK : {DIMENSIONS} entrees ; {n} vues, {total / n:.1f} actives en moyenne, {maxi} au plus")
 
 
+_LIB = None
+
+
+def _lib():
+    """Charge (et compile au besoin) l'indexeur C++ tools/menaces/menaces.cpp."""
+    global _LIB
+    if _LIB is None:
+        import ctypes, os, subprocess, sys
+        ici = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'menaces')
+        nom = os.path.join(ici, 'libmenaces' + ('.dll' if sys.platform == 'win32' else '.so'))
+        src = os.path.join(ici, 'menaces.cpp')
+        if not os.path.exists(nom) or os.path.getmtime(nom) < os.path.getmtime(src):
+            cmd = ['g++', '-O3', '-std=c++17', '-shared', '-pthread', src, '-o', nom]
+            if sys.platform != 'win32':
+                cmd.insert(4, '-fPIC')
+            else:
+                cmd += ['-static']
+            subprocess.run(cmd, check=True)
+        _LIB = ctypes.CDLL(nom)
+    return _LIB
+
+
+def lot(recs, K=64, fils=0):
+    """recs : tableau numpy (n, 32) uint8 -> (w, b) : (n, K) uint16 completes par DIMENSIONS."""
+    import ctypes
+    import numpy as np
+    recs = np.ascontiguousarray(recs, dtype=np.uint8)
+    n = recs.shape[0]
+    w = np.empty((n, K), np.uint16)
+    b = np.empty((n, K), np.uint16)
+    p = ctypes.c_void_p
+    m = _lib().menaces_lot(p(recs.ctypes.data), ctypes.c_long(n), K, p(w.ctypes.data), p(b.ctypes.data), fils)
+    return w, b, m
+
+
+def plateau(r):
+    """Position de 32 octets -> chess.Board (le trait ne compte pas pour les menaces)."""
+    occ = int.from_bytes(bytes(r[:8]), 'little')
+    b = chess.Board(None)
+    n = 0
+    for sq in range(64):
+        if occ >> sq & 1:
+            q = (r[8 + n // 2] >> (4 * (n & 1))) & 15
+            b.set_piece_at(sq, chess.Piece(q % 6 + 1, chess.WHITE if q < 6 else chess.BLACK))
+            n += 1
+    return b
+
+
+def _verifier_cpp(fichier, n=20000):
+    import numpy as np, time
+    recs = np.fromfile(fichier, dtype=np.uint8).reshape(-1, 32)[:n]
+    t = time.time()
+    w, b, m = lot(recs)
+    dt = time.time() - t
+    for i in range(min(n, 3000)):
+        bd = plateau(recs[i])
+        rw = indices_actifs(bd, chess.WHITE)
+        rb = indices_actifs(bd, chess.BLACK)
+        cw = sorted(int(x) for x in w[i] if x < DIMENSIONS)
+        cb = sorted(int(x) for x in b[i] if x < DIMENSIONS)
+        assert cw == rw and cb == rb, f"ecart en position {i}"
+    print(f"C++ = reference sur {min(n, 3000)} positions ; {len(recs) / dt:,.0f} positions/s ; "
+          f"au plus {m} paires actives")
+
+
 if __name__ == '__main__':
-    _verifier()
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == '--cpp':
+        _verifier_cpp(sys.argv[2])
+    else:
+        _verifier()
