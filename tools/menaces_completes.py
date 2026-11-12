@@ -88,8 +88,8 @@ def indice(persp, attaquant, fr, to, attaque):
     return LUT1[(attaquant, attaque, int(fo < too))] + LUT2[(attaquant[1], fo, too)]
 
 
-def indices_actifs(board, persp):
-    """Indices actifs (tries) d'une position, vue du camp persp."""
+def indices_actifs(board, persp, ennemis=False):
+    """Indices actifs (tries) d'une position, vue du camp persp (ennemis : sans les defenses)."""
     act = []
     occ = board.occupied
     for sq, p in board.piece_map().items():
@@ -101,6 +101,8 @@ def indices_actifs(board, persp):
             to = (bb & -bb).bit_length() - 1
             bb &= bb - 1
             q = board.piece_at(to)
+            if ennemis and q.color == p.color:
+                continue
             i = indice(persp, (p.color, p.piece_type), sq, to, (q.color, q.piece_type))
             if i < DIMENSIONS:
                 act.append(i)
@@ -150,7 +152,7 @@ def _lib():
     return _LIB
 
 
-def lot(recs, K=64, fils=0):
+def lot(recs, K=64, fils=0, ennemis=False):
     """recs : tableau numpy (n, 32) uint8 -> (w, b) : (n, K) uint16 completes par DIMENSIONS."""
     import ctypes
     import numpy as np
@@ -159,7 +161,8 @@ def lot(recs, K=64, fils=0):
     w = np.empty((n, K), np.uint16)
     b = np.empty((n, K), np.uint16)
     p = ctypes.c_void_p
-    m = _lib().menaces_lot(p(recs.ctypes.data), ctypes.c_long(n), K, p(w.ctypes.data), p(b.ctypes.data), fils)
+    m = _lib().menaces_lot(p(recs.ctypes.data), ctypes.c_long(n), K, p(w.ctypes.data), p(b.ctypes.data), fils,
+                           int(ennemis))
     return w, b, m
 
 

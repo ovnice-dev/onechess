@@ -96,7 +96,7 @@ struct Init {
 } init_;
 
 // Une position -> indices des deux perspectives ; rend le nombre d'indices (avant troncature a K)
-int une(const uint8_t* r, int K, uint16_t* w, uint16_t* b) {
+int une(const uint8_t* r, int K, uint16_t* w, uint16_t* b, int ennemis) {
     uint64_t occ;
     std::memcpy(&occ, r, 8);
     int piece[64];
@@ -114,6 +114,7 @@ int une(const uint8_t* r, int K, uint16_t* w, uint16_t* b) {
         uint64_t att = attaques(ta, fr, occ, a / 6) & occ;
         for (; att; att &= att - 1) {
             int to = __builtin_ctzll(att), d = piece[to];
+            if (ennemis && (a / 6) == (d / 6)) continue;   // defenses ecartees
             // perspective blanche : telle quelle ; noire : echiquier retourne (^56), couleurs echangees
             uint32_t iw = LUT1[a][d][fr < to] + LUT2[ta][fr][to];
             int fb = fr ^ 56, tb = to ^ 56, ab = (a + 6) % 12, db = (d + 6) % 12;
@@ -134,14 +135,14 @@ extern "C" {
 int menaces_dim() { return DIM; }
 
 // n positions -> w, b : n * K indices chacun ; rend le plus grand nombre d'indices vu (> K : tronque)
-int menaces_lot(const uint8_t* recs, long n, int K, uint16_t* w, uint16_t* b, int fils) {
+int menaces_lot(const uint8_t* recs, long n, int K, uint16_t* w, uint16_t* b, int fils, int ennemis) {
     if (fils < 1) fils = int(std::thread::hardware_concurrency());
     std::vector<int> maxi(fils, 0);
     std::vector<std::thread> th;
     for (int f = 0; f < fils; ++f)
         th.emplace_back([=, &maxi] {
             for (long i = n * f / fils; i < n * (f + 1) / fils; ++i) {
-                int k = une(recs + 32 * i, K, w + K * i, b + K * i);
+                int k = une(recs + 32 * i, K, w + K * i, b + K * i, ennemis);
                 if (k > maxi[f]) maxi[f] = k;
             }
         });

@@ -91,6 +91,8 @@ DENSE = False      # --ft-dense : 1re couche en produits de matrices (TPU)
 # table th de (DIM + 1) x hidden ajoutee a la 1re couche ; la ligne DIM (remplissage) reste nulle.
 # Indices calcules sur l'hote (indexeur C++) et passes avec le lot : r = (positions, iw, ib).
 MENACES = False
+LARG_MEN = 0        # --menaces-largeur : neurones alimentes par les menaces (0 = tous) ; bloc etroit = moins de memoire lue
+ENNEMIS = False     # --menaces-ennemis 1 : sans les defenses (cible du meme camp)
 K_MEN = 64
 DIM_MEN = 59808
 CLIP_TH = 127 / QA   # poids des menaces en int8 dans le moteur (comme Stockfish), meme echelle QA
@@ -147,6 +149,10 @@ def predire(p, r, nb, ob_n, lam):
     if MENACES:
         r, iw, ib = r
         tw, tb = p["th"][iw].sum(1), p["th"][ib].sum(1)
+        h = p["ft_bias"].shape[0]
+        if tw.shape[1] < h:   # bloc etroit : les menaces n'alimentent que les premiers neurones
+            tw = jnp.pad(tw, ((0, 0), (0, h - tw.shape[1])))
+            tb = jnp.pad(tb, ((0, 0), (0, h - tb.shape[1])))
     else:
         tw = tb = 0.0
     if DENSE:
@@ -210,7 +216,7 @@ def borner(p, nb):
 def nouveaux(nb, hidden, ob_n, graine):
     k = jax.random.split(jax.random.PRNGKey(graine), 3)
     n_in = nb * BASE
-    th = {"th": jnp.zeros((DIM_MEN + 1, hidden))} if MENACES else {}   # a zero : greffe sans effet au depart
+    th = {"th": jnp.zeros((DIM_MEN + 1, LARG_MEN or hidden))} if MENACES else {}   # a zero : greffe sans effet au depart
     return borner({**th,
         "ft": 0.01 * jax.random.normal(k[0], (n_in + 1, hidden)),
         "ft_v": 0.01 * jax.random.normal(k[1], (BASE + 1, hidden)),
@@ -357,7 +363,7 @@ def avec_menaces(recs):
         return recs
     sys.path.insert(0, ICI)
     import menaces_completes as M
-    iw, ib, m = M.lot(recs, K_MEN)
+    iw, ib, m = M.lot(recs, K_MEN, ennemis=ENNEMIS)
     if m > K_MEN:
         print(f"[menaces] {m} paires actives > {K_MEN} : tronque", flush=True)
     return recs, iw.astype(np.int32), ib.astype(np.int32)
@@ -392,8 +398,11 @@ def main():
     ap.add_argument("--verifier", action="store_true", help="comparaison pas a pas avec train.py")
     ap.add_argument("--ft-dense", type=int, default=0, help="1 = 1re couche en produits de matrices denses (TPU)")
     ap.add_argument("--menaces", type=int, default=0, help="1 = entrees menaces completes (phase 10, C)")
+    ap.add_argument("--menaces-largeur", type=int, default=0, help="neurones alimentes par les menaces (0 = tous)")
+    ap.add_argument("--menaces-ennemis", type=int, default=0, help="1 = sans les defenses")
     a = ap.parse_args()
-    global DENSE, MENACES
+    global DENSE, MENACES, LARG_MEN, ENNEMIS
+    LARG_MEN, ENNEMIS = a.menaces_largeur, bool(a.menaces_ennemis)
     DENSE = bool(a.ft_dense)
     MENACES = bool(a.menaces)
     if a.verifier:
@@ -503,8 +512,11 @@ def main():
     _, _, mx = validation(jax.tree.map(jnp.asarray, best_p))
     print(f"export de l'epoque {best[2]} ({best[1]:.1f} cp)", flush=True)
     exporter(best_p, nb, a.hidden, ob_n, a.out, int(round(mx * QA)), a.save_pt)
-    if MENACES:
+    if MENACES and (LARG_MEN in (0, a.hidden)) and not ENNEMIS:
         ecrire_menaces(a.out, best_p["th"], nb, a.hidden)
+    elif MENACES:
+        print("bloc etroit ou sans defenses : format moteur a venir ; poids dans *.menaces.npy", flush=True)
+    if MENACES:
         np.save(a.out + ".menaces.npy", np.asarray(best_p["th"], dtype=np.float32))
 
 
