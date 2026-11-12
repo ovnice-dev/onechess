@@ -651,6 +651,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
     set_dirty_piece(m, pc, captured, *st);
     st->accGen = 0;
+    st->thrGen = 0;
 
     // Place suivante dans le reservoir. -1 signifie "aucune" : l'evaluation
     // repartira alors de zero. Cela n'arrive qu'au-dela de ACC_POOL coups
@@ -877,6 +878,7 @@ void Position::do_null_move(StateInfo& newSt) {
     newSt.previous         = st;
     newSt.dirtyPiece.count = 0;
     newSt.accGen           = 0;
+    newSt.thrGen           = 0;
     newSt.accIndex = (st->accIndex >= 0 && st->accIndex + 1 < NNUE::ACC_POOL)
                      ? st->accIndex + 1
                      : -1;

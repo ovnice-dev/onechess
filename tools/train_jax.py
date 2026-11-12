@@ -248,6 +248,23 @@ def vers_torch(p):
     return {nom: torch.from_numpy(np.asarray(p[k], dtype=np.float32)) for k, nom in NOMS.items()}
 
 
+FULLTHREAT_FLAG = 4096   # moteur : bit 12 du champ activation (nnue.h)
+
+
+def ecrire_menaces(chemin, th, nb, hidden):
+    """Insere la table des menaces completes (int8, DIM x hidden) apres les biais de la
+    1re couche d'un .nnue ecrit par train.export, et leve le bit FULLTHREAT_FLAG."""
+    import struct
+    raw = bytearray(open(chemin, "rb").read())
+    act = struct.unpack_from("<I", raw, 20)[0]
+    assert struct.unpack_from("<I", raw, 4)[0] == hidden and struct.unpack_from("<I", raw, 8)[0] == nb
+    struct.pack_into("<I", raw, 20, act | FULLTHREAT_FLAG)
+    off = 24 + 64 + nb * BASE * hidden * 2 + hidden * 2
+    q = np.clip(np.round(np.asarray(th[:DIM_MEN], dtype=np.float64) * QA), -127, 127).astype(np.int8)
+    open(chemin, "wb").write(bytes(raw[:off]) + q.tobytes() + bytes(raw[off:]))
+    print(f"menaces completes inserees : {q.shape[0]} x {q.shape[1]} int8 ({q.nbytes / 1e6:.0f} Mo)", flush=True)
+
+
 def exporter(p, nb, hidden, ob_n, chemin, empirical, save_pt=""):
     import torch
     sys.path.insert(0, ICI)
@@ -486,9 +503,9 @@ def main():
     _, _, mx = validation(jax.tree.map(jnp.asarray, best_p))
     print(f"export de l'epoque {best[2]} ({best[1]:.1f} cp)", flush=True)
     exporter(best_p, nb, a.hidden, ob_n, a.out, int(round(mx * QA)), a.save_pt)
-    if MENACES:   # format moteur des menaces : a venir (etape 4) ; poids gardes a part en attendant
+    if MENACES:
+        ecrire_menaces(a.out, best_p["th"], nb, a.hidden)
         np.save(a.out + ".menaces.npy", np.asarray(best_p["th"], dtype=np.float32))
-        print("poids des menaces ecrits :", a.out + ".menaces.npy", flush=True)
 
 
 # --------------------------------------------------------------------------

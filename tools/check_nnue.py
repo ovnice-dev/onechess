@@ -25,6 +25,7 @@ THREAT_INPUTS = 768          # menaces : piece (hors roi) attaquee par l'adversa
 THREAT_FLAG   = 512
 HIDDEN_FLAG   = 1024         # couches cachees l1/l2 (voir train.py, export)
 PAIRMUL_FLAG  = 2048         # produit par paires avant l1, poids l1 en int8
+FULLTHREAT_FLAG = 4096       # menaces completes (phase 10), table int8 apres les biais
 QH            = 127
 QA, QB, SCALE = 255, 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
@@ -73,7 +74,8 @@ class Net:
             self.threats = bool(self.act & THREAT_FLAG)
             self.hidden = bool(self.act & HIDDEN_FLAG)
             self.pairmul = bool(self.act & PAIRMUL_FLAG)
-            self.act &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG)
+            self.fullthr = bool(self.act & FULLTHREAT_FLAG)
+            self.act &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG | FULLTHREAT_FLAG)
             self.hl, self.nb, self.mirror, self.ob_n = hl, nb, mirror == 1, ob_n
             self.material = mirror == 2   # experts choisis par le materiel
             self.layout = np.frombuffer(f.read(64), dtype=np.uint8).astype(int)
@@ -85,6 +87,10 @@ class Net:
                        .reshape(PAIR_INPUTS, hl).astype(np.int32) if self.pairs else None)
             self.tw = (np.frombuffer(f.read(THREAT_INPUTS * hl * 2), dtype="<i2")
                        .reshape(THREAT_INPUTS, hl).astype(np.int32) if self.threats else None)
+            if self.fullthr:
+                import menaces_completes as MC
+                self.MC = MC
+                self.ftw = np.frombuffer(f.read(MC.DIMENSIONS * hl), dtype="i1").reshape(MC.DIMENSIONS, hl)
             if self.hidden:
                 l1, l2 = struct.unpack("<II", f.read(8))
                 self.l1, self.l2 = l1, l2
@@ -165,6 +171,9 @@ class Net:
             if self.threats:
                 for f in self.threat_features(board, persp):
                     a = a + self.tw[f]
+            if self.fullthr:
+                for f in self.MC.indices_actifs(board, persp):
+                    a = a + self.ftw[f].astype(np.int32)
             # Le moteur garde l'accumulateur en int16 : on reproduit la troncature
             acc[persp] = a.astype(np.int16).astype(np.int32)
 

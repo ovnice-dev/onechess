@@ -65,6 +65,8 @@ struct Network {
     // chaque evaluation, sans mise a jour incrementale.
     bool          threats       = false;
     std::int16_t* threatWeights = nullptr;
+    bool          fullThreats   = false;   // menaces completes (phase 10)
+    std::int8_t*  fullThreatWeights = nullptr;
 
     // [outBuckets][2 * HIDDEN_SIZE], sur le tas pour rester aligne
     std::int16_t* outputWeights = nullptr;
@@ -93,6 +95,7 @@ struct Network {
         aligned_large_pages_free(featureWeights8);
         aligned_large_pages_free(pairWeights);
         aligned_large_pages_free(threatWeights);
+        aligned_large_pages_free(fullThreatWeights);
         aligned_large_pages_free(outputWeights);
     }
 };
@@ -554,6 +557,7 @@ std::string info() {
     ss << "NNUE " << Net->nBuckets << "x768x" << Net->hidden << "x2->"
        << Net->outBuckets << (Net->mirror ? " miroir" : "") << (Net->material ? " experts-materiel" : "")
        << (Net->pairs ? " paires-de-pions" : "") << (Net->threats ? " menaces" : "")
+       << (Net->fullThreats ? " menaces-completes" : "")
        << (Net->activation == ACT_SCRELU ? " screlu" : " crelu") << "  " << NetPath;
     return ss.str();
 }
@@ -636,7 +640,10 @@ bool load(const std::string& path) {
     const bool threats = activation & THREAT_FLAG;
     const bool hasHidden = activation & HIDDEN_FLAG;
     const bool pairMul   = activation & PAIRMUL_FLAG;
-    activation &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG);
+    const bool fullThr   = activation & FULLTHREAT_FLAG;
+    activation &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG | FULLTHREAT_FLAG);
+    if (fullThr && (threats || hasHidden || pairs || activation != ACT_CRELU))
+        return false;   // menaces completes : CReLU, seules
     if (pairMul && !hasHidden)
         return false;
     if (hasHidden && (threats || activation != ACT_CRELU))
@@ -656,6 +663,7 @@ bool load(const std::string& path) {
     net->activation = activation;
     net->pairs      = pairs;
     net->threats    = threats;
+    net->fullThreats = fullThr;
 
     f.read(reinterpret_cast<char*>(net->layout), 64);
 
@@ -722,6 +730,17 @@ bool load(const std::string& path) {
             return false;
         }
         f.read(reinterpret_cast<char*>(net->threatWeights), std::streamsize(tBytes));
+    }
+    if (fullThr)
+    {
+        const std::size_t tBytes = std::size_t(FULL_THREAT_DIM) * HIDDEN_SIZE;
+        net->fullThreatWeights = static_cast<std::int8_t*>(aligned_large_pages_alloc(tBytes));
+        if (!net->fullThreatWeights)
+        {
+            delete net;
+            return false;
+        }
+        f.read(reinterpret_cast<char*>(net->fullThreatWeights), std::streamsize(tBytes));
     }
     if (hasHidden)
     {
@@ -1017,6 +1036,264 @@ Value output_threats(const Accumulator& acc, const Position& pos, int bucket) {
     return Value(std::clamp(cp, -12000, 12000));
 }
 
+// ------------------------------------------------------------------------
+// Menaces completes (phase 10, Full Threats de Stockfish 18-19, GPL-3) : une
+// entree par paire (attaquant, case de depart, piece attaquee, case visee),
+// vue de chaque camp ; pas de miroir de roi. Memes indices que la reference
+// tools/menaces_completes.py et l'indexeur de l'entraineur.
+//
+// Accumulateur a part (les menaces ne dependent pas de l'expert par
+// materiel) : a chaque noeud evalue, la liste triee des menaces est comparee
+// a celle du parent, et seules les lignes qui changent sont appliquees ;
+// sans parent valide, recalcul complet. Poids int8, sommes int16.
+// ------------------------------------------------------------------------
+namespace {
+constexpr int FT_MAXK = 128;   // plus de menaces actives que jamais vu (48 sur 2 M positions)
+
+struct FtLuts {
+    std::uint32_t lut1[12][12][2];
+    std::uint16_t lut2[6][64][64];
+};
+FtLuts* FtTab = nullptr;
+
+void init_full_threats() {
+    static const int NB_CIBLES[6] = {4, 10, 8, 8, 10, 0};
+    static const int CARTE[6][6]  = {{-1, 0, -1, 1, -1, -1}, {0, 1, 2, 3, 4, -1},  {0, 1, 2, 3, -1, -1},
+                                     {0, 1, 2, 3, -1, -1},   {0, 1, 2, 3, 4, -1}, {-1, -1, -1, -1, -1, -1}};
+    auto* t    = new FtLuts();
+    auto  vide = [](int pt, int sq, int colPion) -> Bitboard {
+        const Square s = Square(sq);
+        return pt == 0 ? pawn_attacks_bb(Color(colPion), s) : attacks_bb(PieceType(pt + 1), s, 0);
+    };
+    int decal[6];
+    for (int pt = 0; pt < 6; ++pt)
+    {
+        int off = 0;
+        for (int fr = 0; fr < 64; ++fr)
+        {
+            for (int to = 0; to < 64; ++to)
+            {
+                const Bitboard a = pt != 0 ? vide(pt, fr, 0) : vide(0, fr, to < fr ? BLACK : WHITE);
+                t->lut2[pt][fr][to] = std::uint16_t(off + popcount(((Bitboard(1) << to) - 1) & a));
+            }
+            if (pt != 0)
+                off += popcount(vide(pt, fr, 0));
+            else if (fr >= 8 && fr <= 55)
+                off += popcount(vide(0, fr, WHITE));
+        }
+        decal[pt] = off;
+    }
+    int cumul = 0;
+    for (int a = 0; a < 12; ++a)
+    {
+        const int ta = a % 6, cp = decal[ta], nv = NB_CIBLES[ta];
+        for (int d = 0; d < 12; ++d)
+        {
+            const int  td     = d % 6, m = CARTE[ta][td];
+            const bool ennemi = (a / 6) != (d / 6);
+            const bool semi   = ta == td && (ennemi || ta != 0);
+            const auto f      = std::uint32_t(cumul + ((d / 6) * (nv / 2) + m) * cp);
+            t->lut1[a][d][0]  = m < 0 ? FULL_THREAT_DIM : f;
+            t->lut1[a][d][1]  = (m < 0 || semi) ? FULL_THREAT_DIM : f;
+        }
+        cumul += nv * cp;
+    }
+    assert(cumul == FULL_THREAT_DIM);
+    FtTab = t;
+}
+
+inline int ft_code(Piece pc) { return (color_of(pc) == BLACK) * 6 + (type_of(pc) - 1); }
+
+// Listes triees des menaces actives, vues des blancs (w) et des noirs (b)
+void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, int& nb) {
+    nw = nb = 0;
+    const Bitboard occ = pos.pieces();
+    for (Bitboard o = occ & ~pos.pieces(KING); o;)
+    {
+        const Square   fr  = pop_lsb(o);
+        const Piece    pc  = pos.piece_on(fr);
+        const int      a   = ft_code(pc), ta = a % 6;
+        const Bitboard att =
+          (ta == 0 ? pawn_attacks_bb(color_of(pc), fr) : attacks_bb(type_of(pc), fr, occ)) & occ;
+        for (Bitboard t = att; t;)
+        {
+            const Square        to = pop_lsb(t);
+            const int           d  = ft_code(pos.piece_on(to));
+            const int           f = int(fr), tt = int(to), fb = f ^ 56, tb = tt ^ 56;
+            const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + FtTab->lut2[ta][f][tt];
+            const std::uint32_t ib =
+              FtTab->lut1[(a + 6) % 12][(d + 6) % 12][fb < tb] + FtTab->lut2[ta][fb][tb];
+            if (iw < std::uint32_t(FULL_THREAT_DIM) && nw < FT_MAXK)
+                w[nw++] = std::uint16_t(iw);
+            if (ib < std::uint32_t(FULL_THREAT_DIM) && nb < FT_MAXK)
+                b[nb++] = std::uint16_t(ib);
+        }
+    }
+    std::sort(w, w + nw);
+    std::sort(b, b + nb);
+}
+
+struct alignas(64) ThreatAcc {
+    std::int16_t     v[COLOR_NB][HIDDEN_SIZE];
+    std::uint16_t    list[COLOR_NB][FT_MAXK];
+    int              n[COLOR_NB];
+    const StateInfo* owner;
+};
+thread_local ThreatAcc* ThrPool = nullptr;   // une case par place du reservoir des accumulateurs
+
+inline const std::int8_t* ft_row(int idx) {
+    return Net->fullThreatWeights + std::size_t(idx) * HIDDEN_SIZE;
+}
+
+// d = s - lignes(sub) + lignes(add), poids int8 etendus en int16
+void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, const int* add, int na) {
+#if defined(__AVX2__)
+    for (int j = 0; j < HIDDEN_SIZE; j += 16)
+    {
+        __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
+        for (int k = 0; k < ns; ++k)
+            v = _mm256_sub_epi16(
+              v, _mm256_cvtepi8_epi16(_mm_load_si128(reinterpret_cast<const __m128i*>(ft_row(sub[k]) + j))));
+        for (int k = 0; k < na; ++k)
+            v = _mm256_add_epi16(
+              v, _mm256_cvtepi8_epi16(_mm_load_si128(reinterpret_cast<const __m128i*>(ft_row(add[k]) + j))));
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
+    }
+#elif defined(ONE_NEON)
+    for (int j = 0; j < HIDDEN_SIZE; j += 8)
+    {
+        int16x8_t v = vld1q_s16(s + j);
+        for (int k = 0; k < ns; ++k)
+            v = vsubq_s16(v, vmovl_s8(vld1_s8(ft_row(sub[k]) + j)));
+        for (int k = 0; k < na; ++k)
+            v = vaddq_s16(v, vmovl_s8(vld1_s8(ft_row(add[k]) + j)));
+        vst1q_s16(d + j, v);
+    }
+#else
+    for (int j = 0; j < HIDDEN_SIZE; ++j)
+    {
+        int v = s[j];
+        for (int k = 0; k < ns; ++k)
+            v -= ft_row(sub[k])[j];
+        for (int k = 0; k < na; ++k)
+            v += ft_row(add[k])[j];
+        d[j] = std::int16_t(v);
+    }
+#endif
+}
+
+alignas(64) const std::int16_t FtZero[HIDDEN_SIZE] = {};
+
+// Accumulateur des menaces de la position courante (calcule au besoin)
+const ThreatAcc& threat_acc(const Position& pos) {
+    if (!FtTab)
+        init_full_threats();
+    if (!ThrPool)
+        ThrPool = new ThreatAcc[ACC_POOL];
+    thread_local ThreatAcc scratch;
+    StateInfo* st = pos.state();
+    ThreatAcc& t  = st->accIndex >= 0 ? ThrPool[st->accIndex] : scratch;
+    if (st->accIndex >= 0 && st->thrGen == NetGen && t.owner == st)
+        return t;
+
+    ft_lists(pos, t.list[WHITE], t.n[WHITE], t.list[BLACK], t.n[BLACK]);
+
+    // Dernier ancetre calcule (8 demi-coups au plus) : la difference de sa liste
+    // avec celle du noeud suffit, sans les noeuds intermediaires (souvent jamais
+    // evalues : coup de la table, noeud en echec).
+    const StateInfo* pr = nullptr;
+    if (st->accIndex > 0)
+    {
+        const StateInfo* a = st->previous;
+        for (int k = 0; k < 8 && a && a->accIndex >= 0; ++k, a = a->previous)
+            if (a->thrGen == NetGen && ThrPool[a->accIndex].owner == a)
+            {
+                pr = a;
+                break;
+            }
+    }
+    const bool parentOk = pr != nullptr;
+#ifdef FT_STATS
+    static std::uint64_t nEval = 0, nOk = 0, nRows = 0;
+    static struct Aff { ~Aff() { std::fprintf(stderr, "FT_STATS evals %llu parent_ok %.1f %% lignes/eval %.1f\n", (unsigned long long) nEval, 100.0 * nOk / std::max<std::uint64_t>(1, nEval), double(nRows) / std::max<std::uint64_t>(1, nEval)); } } aff;
+    ++nEval; nOk += parentOk;
+#endif
+    for (Color c : {WHITE, BLACK})
+    {
+        int                 sub[2 * FT_MAXK], add[2 * FT_MAXK], ns = 0, na = 0;
+        const std::int16_t* src = FtZero;
+        if (parentOk)
+        {
+            const ThreatAcc& p = ThrPool[pr->accIndex];
+            src                = p.v[c];
+            // difference de deux listes triees
+            int                  i = 0, j = 0;
+            const std::uint16_t *a = p.list[c], *b = t.list[c];
+            while (i < p.n[c] || j < t.n[c])
+            {
+                if (j >= t.n[c] || (i < p.n[c] && a[i] < b[j]))
+                    sub[ns++] = a[i++];
+                else if (i >= p.n[c] || b[j] < a[i])
+                    add[na++] = b[j++];
+                else
+                    ++i, ++j;
+            }
+        }
+        if (!parentOk || ns + na > t.n[c])   // repartir de zero coute moins cher
+        {
+            src = FtZero, ns = na = 0;
+            for (int k = 0; k < t.n[c]; ++k)
+                add[na++] = t.list[c][k];
+        }
+        ft_apply(src, t.v[c], sub, ns, add, na);
+#ifdef FT_STATS
+        nRows += ns + na;
+#endif
+    }
+    t.owner = st;
+    if (st->accIndex >= 0)
+        st->thrGen = NetGen;
+#ifndef NDEBUG
+    // Preuve : la mise a jour par difference egale le recalcul complet
+    {
+        thread_local ThreatAcc ref;
+        ft_lists(pos, ref.list[WHITE], ref.n[WHITE], ref.list[BLACK], ref.n[BLACK]);
+        for (Color c : {WHITE, BLACK})
+        {
+            int add[FT_MAXK];
+            for (int k = 0; k < ref.n[c]; ++k)
+                add[k] = ref.list[c][k];
+            ft_apply(FtZero, ref.v[c], nullptr, 0, add, ref.n[c]);
+            assert(std::memcmp(ref.v[c], t.v[c], sizeof(ref.v[c])) == 0 && "menaces desynchronisees");
+        }
+    }
+#endif
+    return t;
+}
+
+// Sortie : accumulateur des pieces + accumulateur des menaces, puis la sortie habituelle
+Value output_full(const Accumulator& acc, const Position& pos, int bucket) {
+    const ThreatAcc&                t = threat_acc(pos);
+    thread_local Accumulator sum;
+    for (Color c : {WHITE, BLACK})
+    {
+#if defined(__AVX2__)
+        for (int j = 0; j < HIDDEN_SIZE; j += 16)
+            _mm256_store_si256(reinterpret_cast<__m256i*>(sum.v[c] + j),
+                               _mm256_add_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(acc.v[c] + j)),
+                                                _mm256_load_si256(reinterpret_cast<const __m256i*>(t.v[c] + j))));
+#elif defined(ONE_NEON)
+        for (int j = 0; j < HIDDEN_SIZE; j += 8)
+            vst1q_s16(sum.v[c] + j, vaddq_s16(vld1q_s16(acc.v[c] + j), vld1q_s16(t.v[c] + j)));
+#else
+        for (int j = 0; j < HIDDEN_SIZE; ++j)
+            sum.v[c][j] = std::int16_t(acc.v[c][j] + t.v[c][j]);
+#endif
+    }
+    return output(sum, pos.side_to_move(), bucket);
+}
+}  // namespace
+
 // Premiere couche cachee apres produit par paires (Stockfish) :
 //   p  = (clamp(a[i], 0, QA) * clamp(a[i + H/2], 0, QA)) >> 9   dans [0, QH]
 //   x1 = clamp((W1 p + b1) / QB, 0, QH)                          W1 en int8
@@ -1291,8 +1568,9 @@ Value evaluate(const Position& pos) {
     {
         thread_local Accumulator scratch;
         refresh(scratch, pos);
-        return Net->threats ? output_threats(scratch, pos, current_bucket(pos))
-                            : output(scratch, pos.side_to_move(), current_bucket(pos));
+        return Net->fullThreats ? output_full(scratch, pos, current_bucket(pos))
+             : Net->threats     ? output_threats(scratch, pos, current_bucket(pos))
+                                : output(scratch, pos.side_to_move(), current_bucket(pos));
     }
 
     if (st->accGen != NetGen)
@@ -1395,8 +1673,9 @@ Value evaluate(const Position& pos) {
 #endif
     }
 
-    return Net->threats ? output_threats(pos.accumulator(st->accIndex), pos, current_bucket(pos))
-                        : output(pos.accumulator(st->accIndex), pos.side_to_move(), current_bucket(pos));
+    return Net->fullThreats ? output_full(pos.accumulator(st->accIndex), pos, current_bucket(pos))
+         : Net->threats     ? output_threats(pos.accumulator(st->accIndex), pos, current_bucket(pos))
+                            : output(pos.accumulator(st->accIndex), pos.side_to_move(), current_bucket(pos));
 }
 
 }  // namespace NNUE

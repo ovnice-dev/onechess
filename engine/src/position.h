@@ -57,6 +57,7 @@ struct StateInfo {
     // do_move() et do_null_move() puissent recopier la seule tete utile.
     DirtyPiece    dirtyPiece;
     std::uint32_t accGen;    // generation de reseau ayant calcule l'accumulateur
+    std::uint32_t thrGen;    // idem pour l'accumulateur des menaces completes
     int           accIndex;  // place dans le reservoir, -1 si aucune
 };
 
