@@ -55,13 +55,49 @@ def taille_distante(url):
     return int(cr.split('/')[-1])
 
 
+def bloc_a(url, octet, fenetre=1 << 25):
+    """Debut du bloc qui contient l'octet donne (ou du premier bloc apres lui).
+
+    Une session qui lit les octets [0, D) ne garde que les blocs complets, donc
+    s'arrete au debut du bloc qui chevauche D : la tranche suivante commence
+    exactement la, sans trou ni doublon. On lit une fenetre autour de D et on y
+    cherche une chaine d'en-tetes 'BINP' coherente (3 blocs de suite)."""
+    if octet <= 0:
+        return 0
+    lo = max(0, octet - fenetre)
+    req = urllib.request.Request(url, headers={'Range': f'bytes={lo}-{octet + fenetre - 1}'})
+    with urllib.request.urlopen(req) as r:
+        w = r.read()
+    i = w.find(b'BINP')
+    while i >= 0:
+        p, ok = i, 0
+        while p + 8 <= len(w) and w[p:p + 4] == b'BINP' and ok < 3:
+            p += 8 + int.from_bytes(w[p + 4:p + 8], 'little')
+            ok += 1
+        if ok >= 3 or (ok >= 1 and p >= len(w)):
+            # chaine trouvee : on la suit jusqu'au bloc qui contient l'octet
+            p = i
+            while True:
+                n = int.from_bytes(w[p + 4:p + 8], 'little')
+                if lo + p + 8 + n > octet or p + 8 + n + 8 > len(w):
+                    return lo + p
+                p += 8 + n
+        i = w.find(b'BINP', i + 1)
+    sys.exit(f"aucun bloc trouve autour de l'octet {octet}")
+
+
 def par_morceaux(a):
     sys.path.insert(0, os.path.join(ICI, 'binpack'))
     from decouper import frontieres
-    total = a.octets or taille_distante(a.url)
+    taille = taille_distante(a.url)
+    debut = bloc_a(a.url, a.debut) if a.debut else 0
+    total = min(taille, a.debut + a.octets) if a.octets else taille
+    if a.debut:
+        print(f"tranche : octets {debut:,} a {total:,} (debut demande {a.debut:,}, fichier {taille:,})",
+              flush=True)
     exe = convertisseur()
     tmp = os.path.join('/tmp', f'src_{a.prefixe}')
-    debut, m, t = 0, 0, time.time()
+    m, t = 0, time.time()
     while debut < total:
         os.makedirs(tmp, exist_ok=True)
         src = os.path.join(tmp, 'source.binpack')
@@ -117,7 +153,12 @@ def main():
                     help='octets par morceau (ex. 4000000000) : telecharge, convertit et efface morceau par '
                          'morceau ; le disque temporaire ne depasse plus 2 morceaux (le fichier entier en '
                          'demandait 2 fois sa taille, et a fait tomber le final du 7-11)')
+    ap.add_argument('--debut', type=int, default=0,
+                    help="octet de depart de la tranche (ex. 7000000000 : juste apres les 7 premiers Go du "
+                         "final) ; aligne sur le bloc qui le chevauche ; --octets est alors la longueur")
     a = ap.parse_args()
+    if a.debut and not a.morceau:
+        a.morceau = 4000000000
 
     os.makedirs(a.dest, exist_ok=True)
     if a.morceau:
