@@ -1,3 +1,4 @@
+Smp4vs2|Threads=4|0 5|10|60|20|Threads=2|tc:10+0.1
 RfpCorrF|RfpCorr=32|0 3|10|150|20||tc:10+0.1
 InsufMatF|InsufMat=1|0 3|10|150|20||tc:10+0.1
 CorrExpertF|CorrExpert=1|0 3|10|150|20||tc:10+0.1
