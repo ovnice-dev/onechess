@@ -2,7 +2,9 @@
 #include "prof.h"
 
 #include <algorithm>
-#include <x86intrin.h>
+#ifdef FT_STATS
+#include <x86intrin.h>   // __rdtsc : mesures de cycles seulement (x86 ; jamais sur ARM)
+#endif
 #include <iostream>
 #include <cassert>
 #include <cstring>

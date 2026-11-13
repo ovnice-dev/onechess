@@ -48,8 +48,10 @@ run() {  # nom chemin
 run Berserk-13         engines/berserk13/berserk-13-avx2-pext.exe
 run Caissa-1.24        engines/caissa124/caissa-1.24-x64-avx2-bmi2.exe
 run Stormphrax-7.0.0   engines/stormphrax7/stormphrax-7.0.0-avx2-bmi2.exe
-run Reckless-0.7.0     engines/reckless-0.7.0.exe
-run RubiChess-20240817 "$RUBI"
+# 13-11-2026 (Onechess 1.0) : Reckless 0.7.0 (3419) et RubiChess (3568) remplaces par
+# deux moteurs au-dessus de 3600 ; toujours 5 matchs en parallele (6 coeurs).
+run Reckless-0.9.0     engines/reckless090/reckless-windows-avx2.exe
+run PlentyChess-7.0.0  engines/plenty700/PlentyChess-7.0.0-windows-bmi2.exe
 
 wait
 echo "### tournoi d'ancrage termine $(date '+%Y-%m-%d %H:%M')" | tee -a "$OUT/tournoi.log"

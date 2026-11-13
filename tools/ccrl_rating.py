@@ -29,13 +29,15 @@ ANCHORS = {
     "Leorik-3.0": (3225, 12),
     "Weiss-2.0": (3264, 10),
     "Avalanche-2.1.0": (3350, 9),
-    "Reckless-0.7.0": (3421, 12),
-    "RubiChess-20240817": (3569, 7),
-    # Ajoutes le 24-10-2026 (liste du jour, notes mono-coeur) : Onechess a
-    # depasse les trois plus faibles, trop loin pour mesurer finement.
-    "Berserk-13": (3587, 5),
-    "Caissa-1.24": (3594, 9),
-    "Stormphrax-7.0.0": (3582, 9),
+    "Reckless-0.7.0": (3419, 12),
+    "RubiChess-20240817": (3568, 7),
+    # Notes mono-coeur de la liste CCRL 40/15 du 13-11-2026
+    "Berserk-13": (3586, 5),
+    "Caissa-1.24": (3593, 9),
+    "Stormphrax-7.0.0": (3581, 9),
+    # Ajoutes le 13-11-2026 (Onechess 1.0) : adversaires au-dessus de 3600
+    "Reckless-0.9.0": (3621, 8),
+    "PlentyChess-7.0.0": (3609, 9),
 }
 
 PAIR_VALUES = (0.0, 0.25, 0.5, 0.75, 1.0)
