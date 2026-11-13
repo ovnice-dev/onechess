@@ -705,6 +705,15 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
+    // QsFin bit 1 (phase 10) : elagage par distance au mat, comme dans search()
+    if (Tune::QsFin & 1)
+    {
+        alpha = std::max(mated_in(ss->ply), alpha);
+        beta  = std::min(mate_in(ss->ply + 1), beta);
+        if (alpha >= beta)
+            return alpha;
+    }
+
     // Deux profondeurs seulement en quiescence : 0 quand on donne encore les
     // echecs, -1 ensuite. Cela evite de multiplier les entrees de TT.
     const Depth ttDepth = ss->inCheck || depth >= DEPTH_QS ? DEPTH_QS : DEPTH_QS - 1;

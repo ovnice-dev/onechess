@@ -84,7 +84,11 @@ MovePicker::MovePicker(const Position&              p,
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
     else
-        stage = (d > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
+        stage = (d > 0 ? MAIN_TT : QSEARCH_TT)
+              + !(ttm && pos.pseudo_legal(ttm)
+                  // QsFin bit 2 (phase 10) : hors echec, la quiescence ne prend de la table
+                  // qu'une capture ou une promotion (sinon echecs tranquilles sans fin)
+                  && (d > 0 || !(Tune::QsFin & 2) || pos.capture_stage(ttm)));
 }
 
 MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
