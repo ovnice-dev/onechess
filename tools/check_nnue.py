@@ -90,7 +90,9 @@ class Net:
             if self.fullthr:
                 import menaces_completes as MC
                 self.MC = MC
-                self.ftw = np.frombuffer(f.read(MC.DIMENSIONS * hl), dtype="i1").reshape(MC.DIMENSIONS, hl)
+                self.ftlarg, opts = struct.unpack("<II", f.read(8))
+                self.ftenn = bool(opts & 1)
+                self.ftw = np.frombuffer(f.read(MC.DIMENSIONS * self.ftlarg), dtype="i1").reshape(MC.DIMENSIONS, self.ftlarg)
             if self.hidden:
                 l1, l2 = struct.unpack("<II", f.read(8))
                 self.l1, self.l2 = l1, l2
@@ -172,8 +174,8 @@ class Net:
                 for f in self.threat_features(board, persp):
                     a = a + self.tw[f]
             if self.fullthr:
-                for f in self.MC.indices_actifs(board, persp):
-                    a = a + self.ftw[f].astype(np.int32)
+                for f in self.MC.indices_actifs(board, persp, self.ftenn):
+                    a[:self.ftlarg] = a[:self.ftlarg] + self.ftw[f].astype(np.int32)
             # Le moteur garde l'accumulateur en int16 : on reproduit la troncature
             acc[persp] = a.astype(np.int16).astype(np.int32)
 

@@ -68,6 +68,8 @@ struct Network {
     std::int16_t* threatWeights = nullptr;
     bool          fullThreats   = false;   // menaces completes (phase 10)
     std::int8_t*  fullThreatWeights = nullptr;
+    int           ftWidth   = HIDDEN_SIZE;   // neurones alimentes par les menaces (bloc etroit)
+    bool          ftEnemies = false;         // menaces sur l'adversaire seulement (sans defenses)
 
     // [outBuckets][2 * HIDDEN_SIZE], sur le tas pour rester aligne
     std::int16_t* outputWeights = nullptr;
@@ -735,7 +737,18 @@ bool load(const std::string& path) {
     }
     if (fullThr)
     {
-        const std::size_t tBytes = std::size_t(FULL_THREAT_DIM) * HIDDEN_SIZE;
+        // En-tete : largeur du bloc (multiple de 64, au plus HIDDEN_SIZE), options (bit 0 : sans defenses)
+        std::uint32_t largeur = 0, opts = 0;
+        f.read(reinterpret_cast<char*>(&largeur), 4);
+        f.read(reinterpret_cast<char*>(&opts), 4);
+        if (!f || largeur < 64 || largeur > std::uint32_t(HIDDEN_SIZE) || largeur % 64)
+        {
+            delete net;
+            return false;
+        }
+        net->ftWidth   = int(largeur);
+        net->ftEnemies = opts & 1;
+        const std::size_t tBytes = std::size_t(FULL_THREAT_DIM) * largeur;
         net->fullThreatWeights = static_cast<std::int8_t*>(aligned_large_pages_alloc(tBytes));
         if (!net->fullThreatWeights)
         {
@@ -851,7 +864,11 @@ bool load(const std::string& path) {
 
     delete Net;
     Net     = net;
-    FullThreatsOn = net->fullThreats;
+#ifdef FT_INCREMENTAL
+    FullThreatsOn = net->fullThreats;   // suivi coup par coup dans do_move (plus lent : 13-11)
+#else
+    FullThreatsOn = false;               // recalcul complet a chaque evaluation
+#endif
     NetPath = path;
     ++NetGen;      // invalide tout accumulateur calcule avec le reseau precedent
     return true;
@@ -1140,6 +1157,8 @@ void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, 
         for (Bitboard t = att; t;)
         {
             const Square        to = pop_lsb(t);
+            if (Net->ftEnemies && color_of(pos.piece_on(to)) == color_of(pc))
+                continue;   // defense ecartee
             const int           d  = ft_code(pos.piece_on(to));
             const int           f = int(fr), tt = int(to), fb = f ^ 56, tb = tt ^ 56;
             const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + ft_off(ta, f, tt);
@@ -1151,8 +1170,10 @@ void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, 
                 b[nb++] = std::uint16_t(ib);
         }
     }
+#ifdef FT_INCREMENTAL
     std::sort(w, w + nw);
     std::sort(b, b + nb);
+#endif
 }
 
 // Changements de menaces d'un coup, codes independamment de la perspective :
@@ -1177,11 +1198,12 @@ struct alignas(64) ThreatAcc {
 thread_local ThreatAcc* ThrPool = nullptr;   // une case par place du reservoir des accumulateurs
 
 inline const std::int8_t* ft_row(int idx) {
-    return Net->fullThreatWeights + std::size_t(idx) * HIDDEN_SIZE;
+    return Net->fullThreatWeights + std::size_t(idx) * Net->ftWidth;
 }
 
 // d = s - lignes(sub) + lignes(add), poids int8 etendus en int16
 void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, const int* add, int na) {
+    const int W = Net->ftWidth;   // seuls les W premiers neurones recoivent les menaces
 #if defined(__AVX2__) && !defined(FT_APPLY16)
     // Tuiles de 64 valeurs : une ligne de cache entiere de chaque ligne de poids par
     // tuile, et prechargement de la ligne de cache suivante (table hors cache).
@@ -1191,9 +1213,9 @@ void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, co
         rs[k] = ft_row(sub[k]);
     for (int k = 0; k < na; ++k)
         ra[k] = ft_row(add[k]);
-    for (int j = 0; j < HIDDEN_SIZE; j += 64)
+    for (int j = 0; j < W; j += 64)
     {
-        if (j + FT_PF_DIST * 64 < HIDDEN_SIZE)
+        if (j + FT_PF_DIST * 64 < W)
         {
             for (int k = 0; k < ns; ++k)
                 __builtin_prefetch(rs[k] + j + FT_PF_DIST * 64, 0, 0);
@@ -1228,7 +1250,7 @@ void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, co
         _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 48), v3);
     }
 #elif defined(__AVX2__)
-    for (int j = 0; j < HIDDEN_SIZE; j += 16)
+    for (int j = 0; j < W; j += 16)
     {
         __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
         for (int k = 0; k < ns; ++k)
@@ -1240,7 +1262,7 @@ void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, co
         _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
     }
 #elif defined(ONE_NEON)
-    for (int j = 0; j < HIDDEN_SIZE; j += 8)
+    for (int j = 0; j < W; j += 8)
     {
         int16x8_t v = vld1q_s16(s + j);
         for (int k = 0; k < ns; ++k)
@@ -1250,7 +1272,7 @@ void ft_apply(const std::int16_t* s, std::int16_t* d, const int* sub, int ns, co
         vst1q_s16(d + j, v);
     }
 #else
-    for (int j = 0; j < HIDDEN_SIZE; ++j)
+    for (int j = 0; j < W; ++j)
     {
         int v = s[j];
         for (int k = 0; k < ns; ++k)
@@ -1290,6 +1312,10 @@ bool FullThreatsOn = false;
 // bloques compris) : on enumere ces menaces sur les deux plateaux et on garde
 // la difference.
 void ft_on_move(const Position& pos) {
+#ifndef FT_INCREMENTAL
+    (void) pos;
+    return;
+#endif
     StateInfo* st = pos.state();
     if (st->accIndex < 0)
         return;
@@ -1346,7 +1372,8 @@ void ft_on_move(const Position& pos) {
         return std::uint32_t(s) | std::uint32_t(to) << 6 | std::uint32_t(ft_code(a)) << 12
              | std::uint32_t(ft_code(d)) << 16 | (ajout ? 0x80000000u : 0u);
     };
-    int n = 0;
+    int        n   = 0;
+    const bool enn = Net->ftEnemies;   // sans defenses
     // Pieces des cases touchees : toutes leurs menaces d'avant retirees, d'apres ajoutees
     // (le contenu d'une case touchee change toujours : rien a annuler)
     for (Bitboard z = Z; z;)
@@ -1364,7 +1391,7 @@ void ft_on_move(const Position& pos) {
             {
                 const Square to = pop_lsb(x);
                 const Piece  q  = etat ? pos.piece_on(to) : avant(to);
-                if (type_of(q) != KING && n < FT_MAXD)
+                if (type_of(q) != KING && n < FT_MAXD && (!enn || color_of(q) != color_of(pc)))
                     t.dirty[n++] = code(s, to, pc, q, etat == 1);
             }
         }
@@ -1386,14 +1413,14 @@ void ft_on_move(const Position& pos) {
         {
             const Square to = pop_lsb(x);
             const Piece  q  = avant(to);
-            if (type_of(q) != KING && n < FT_MAXD)
+            if (type_of(q) != KING && n < FT_MAXD && (!enn || color_of(q) != color_of(pc)))
                 t.dirty[n++] = code(s, to, pc, q, false);
         }
         for (Bitboard x = (aA & ~aB) | (aB & aA & Z); x;)
         {
             const Square to = pop_lsb(x);
             const Piece  q  = pos.piece_on(to);
-            if (type_of(q) != KING && n < FT_MAXD)
+            if (type_of(q) != KING && n < FT_MAXD && (!enn || color_of(q) != color_of(pc)))
                 t.dirty[n++] = code(s, to, pc, q, true);
         }
     }
@@ -1448,6 +1475,23 @@ const ThreatAcc& threat_acc(const Position& pos) {
     ThreatAcc& t = pool[st->accIndex];
     if (st->accIndex >= 0 && st->thrGen == NetGen && t.owner == st)
         return t;
+#ifndef FT_INCREMENTAL
+    {
+        std::uint16_t lw[FT_MAXK], lb[FT_MAXK];
+        int           nw, nbk;
+        ft_lists(pos, lw, nw, lb, nbk);
+        int aw[FT_MAXK], ab[FT_MAXK];
+        for (int k = 0; k < nw; ++k)
+            aw[k] = lw[k];
+        for (int k = 0; k < nbk; ++k)
+            ab[k] = lb[k];
+        ft_apply(FtZero, t.v[WHITE], nullptr, 0, aw, nw);
+        ft_apply(FtZero, t.v[BLACK], nullptr, 0, ab, nbk);
+        t.owner    = st;
+        st->thrGen = NetGen;
+        return t;
+    }
+#endif
 
 #ifdef FT_STATS
     static std::uint64_t cy[4] = {0, 0, 0, 0}, nca = 0;
@@ -1585,7 +1629,7 @@ const ThreatAcc& threat_acc(const Position& pos) {
             for (int k = 0; k < n; ++k)
                 add[k] = (c == WHITE ? lw : lb)[k];
             ft_apply(FtZero, ref.v[c], nullptr, 0, add, n);
-            assert(std::memcmp(ref.v[c], t.v[c], sizeof(ref.v[c])) == 0 && "menaces desynchronisees");
+            assert(std::memcmp(ref.v[c], t.v[c], sizeof(std::int16_t) * Net->ftWidth) == 0 && "menaces desynchronisees");
         }
     }
 #endif
@@ -1596,18 +1640,22 @@ const ThreatAcc& threat_acc(const Position& pos) {
 Value output_full(const Accumulator& acc, const Position& pos, int bucket) {
     const ThreatAcc&       t = threat_acc(pos);
     alignas(64) Accumulator sum;
+    const int              W = Net->ftWidth;
     for (Color c : {WHITE, BLACK})
     {
+        // Neurones hors du bloc des menaces : l'accumulateur des pieces seul
+        if (W < HIDDEN_SIZE)
+            std::memcpy(sum.v[c] + W, acc.v[c] + W, sizeof(std::int16_t) * (HIDDEN_SIZE - W));
 #if defined(__AVX2__)
-        for (int j = 0; j < HIDDEN_SIZE; j += 16)
+        for (int j = 0; j < W; j += 16)
             _mm256_store_si256(reinterpret_cast<__m256i*>(sum.v[c] + j),
                                _mm256_add_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(acc.v[c] + j)),
                                                 _mm256_load_si256(reinterpret_cast<const __m256i*>(t.v[c] + j))));
 #elif defined(ONE_NEON)
-        for (int j = 0; j < HIDDEN_SIZE; j += 8)
+        for (int j = 0; j < W; j += 8)
             vst1q_s16(sum.v[c] + j, vaddq_s16(vld1q_s16(acc.v[c] + j), vld1q_s16(t.v[c] + j)));
 #else
-        for (int j = 0; j < HIDDEN_SIZE; ++j)
+        for (int j = 0; j < W; ++j)
             sum.v[c][j] = std::int16_t(acc.v[c][j] + t.v[c][j]);
 #endif
     }

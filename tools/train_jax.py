@@ -257,9 +257,10 @@ def vers_torch(p):
 FULLTHREAT_FLAG = 4096   # moteur : bit 12 du champ activation (nnue.h)
 
 
-def ecrire_menaces(chemin, th, nb, hidden):
-    """Insere la table des menaces completes (int8, DIM x hidden) apres les biais de la
-    1re couche d'un .nnue ecrit par train.export, et leve le bit FULLTHREAT_FLAG."""
+def ecrire_menaces(chemin, th, nb, hidden, ennemis=False):
+    """Insere les menaces completes apres les biais de la 1re couche d'un .nnue ecrit par
+    train.export et leve le bit FULLTHREAT_FLAG : largeur du bloc (uint32), options
+    (uint32, bit 0 = sans defenses), puis la table int8 DIM x largeur."""
     import struct
     raw = bytearray(open(chemin, "rb").read())
     act = struct.unpack_from("<I", raw, 20)[0]
@@ -267,7 +268,8 @@ def ecrire_menaces(chemin, th, nb, hidden):
     struct.pack_into("<I", raw, 20, act | FULLTHREAT_FLAG)
     off = 24 + 64 + nb * BASE * hidden * 2 + hidden * 2
     q = np.clip(np.round(np.asarray(th[:DIM_MEN], dtype=np.float64) * QA), -127, 127).astype(np.int8)
-    open(chemin, "wb").write(bytes(raw[:off]) + q.tobytes() + bytes(raw[off:]))
+    tete = struct.pack("<II", q.shape[1], int(ennemis))
+    open(chemin, "wb").write(bytes(raw[:off]) + tete + q.tobytes() + bytes(raw[off:]))
     print(f"menaces completes inserees : {q.shape[0]} x {q.shape[1]} int8 ({q.nbytes / 1e6:.0f} Mo)", flush=True)
 
 
@@ -512,11 +514,8 @@ def main():
     _, _, mx = validation(jax.tree.map(jnp.asarray, best_p))
     print(f"export de l'epoque {best[2]} ({best[1]:.1f} cp)", flush=True)
     exporter(best_p, nb, a.hidden, ob_n, a.out, int(round(mx * QA)), a.save_pt)
-    if MENACES and (LARG_MEN in (0, a.hidden)) and not ENNEMIS:
-        ecrire_menaces(a.out, best_p["th"], nb, a.hidden)
-    elif MENACES:
-        print("bloc etroit ou sans defenses : format moteur a venir ; poids dans *.menaces.npy", flush=True)
     if MENACES:
+        ecrire_menaces(a.out, best_p["th"], nb, a.hidden, ENNEMIS)
         np.save(a.out + ".menaces.npy", np.asarray(best_p["th"], dtype=np.float32))
 
 
