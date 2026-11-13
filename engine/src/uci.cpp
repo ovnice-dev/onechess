@@ -260,6 +260,16 @@ void UCI::init(OptionsMap& o) {
         TT.resize(std::size_t(int(Options["Hash"])), int(opt));
     });
 
+    // Plusieurs fils (13-11, d'apres Stockfish ; caches, a tester au temps) :
+    // historiques partages entre fils, et choix du coup final par vote.
+    o["SharedHistories"] << Option(false, [](const Option& opt) {
+        SharedHistOn = bool(opt);
+        Threads.set(std::size_t(int(Options["Threads"])));
+    });
+    o["SharedHistories"].hidden = true;
+    o["SmpVote"] << Option(false, [](const Option& opt) { SmpVote = bool(opt); });
+    o["SmpVote"].hidden = true;
+
     o["Clear Hash"] << Option(OnChange([](const Option&) { TT.clear(int(Options["Threads"])); }));
 
     o["Move Overhead"] << Option(10, 0, 5000);

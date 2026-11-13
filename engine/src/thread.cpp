@@ -13,8 +13,16 @@
 namespace one {
 
 ThreadPool Threads;
+bool       SharedHistOn = false;
+bool       SmpVote      = false;
 
-Thread::Thread(std::size_t n) :
+Thread::Thread(std::size_t n, SharedHist* shared) :
+    pawnHistory(shared ? shared->pawnHistory : own.pawnHistory),
+    correctionHistory(shared ? shared->correctionHistory : own.correctionHistory),
+    nonPawnCorrection(shared ? shared->nonPawnCorrection : own.nonPawnCorrection),
+    minorCorrection(shared ? shared->minorCorrection : own.minorCorrection),
+    majorCorrection(shared ? shared->majorCorrection : own.majorCorrection),
+    continuationHistory(shared ? shared->continuationHistory : own.continuationHistory),
     idx(n),
     stdThread(&Thread::idle_loop, this) {
     wait_for_search_finished();
@@ -98,8 +106,10 @@ void ThreadPool::set(std::size_t requested) {
     if (requested == 0)
         return;
 
+    delete shared;
+    shared = SharedHistOn && requested > 1 ? new SharedHist() : nullptr;
     for (std::size_t i = 0; i < requested; ++i)
-        threads.push_back(new Thread(i));
+        threads.push_back(new Thread(i, shared));
 
     clear();
 }
@@ -223,6 +233,49 @@ std::uint64_t ThreadPool::nodes_searched() const {
 // longue excursion sans rien prouver.
 Thread* ThreadPool::best_thread() const {
     Thread* best = threads.front();
+
+    // Vote des fils (Stockfish) : chaque fil donne au coup qu'il propose une voix
+    // proportionnelle a l'avance de son score sur le plus faible ; un mat
+    // annonce l'emporte (le plus court).
+    if (SmpVote && threads.size() > 1)
+    {
+        Value minScore = VALUE_INFINITE;
+        for (Thread* th : threads)
+            if (th->rootMoves[0].score != -VALUE_INFINITE)
+                minScore = std::min(minScore, th->rootMoves[0].score);
+        std::vector<std::pair<Move, std::int64_t>> votes;
+        auto vote = [&](Move m) -> std::int64_t& {
+            for (auto& v : votes)
+                if (v.first == m)
+                    return v.second;
+            votes.emplace_back(m, 0);
+            return votes.back().second;
+        };
+        for (Thread* th : threads)
+            if (th->rootMoves[0].score != -VALUE_INFINITE)
+                vote(th->rootMoves[0].pv[0]) += th->rootMoves[0].score - minScore + 14;
+        for (Thread* th : threads)
+        {
+            const Search::RootMove& b = best->rootMoves[0];
+            const Search::RootMove& n = th->rootMoves[0];
+            if (n.score == -VALUE_INFINITE)
+                continue;
+            const bool bDec = b.score != -VALUE_INFINITE && std::abs(b.score) >= VALUE_TB_WIN_IN_MAX_PLY;
+            const bool nDec = std::abs(n.score) >= VALUE_TB_WIN_IN_MAX_PLY;
+            if (bDec)
+            {
+                if (nDec && n.score > b.score)
+                    best = th;
+            }
+            else if (b.score == -VALUE_INFINITE
+                     || (nDec && n.score > 0)
+                     || (n.score > -VALUE_TB_WIN_IN_MAX_PLY
+                         && (vote(n.pv[0]) > vote(b.pv[0])
+                             || (vote(n.pv[0]) == vote(b.pv[0]) && n.pv.size() > b.pv.size()))))
+                best = th;
+        }
+        return best;
+    }
 
     for (Thread* th : threads)
     {

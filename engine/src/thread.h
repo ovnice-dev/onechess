@@ -18,9 +18,24 @@ namespace one {
 // transposition est partagee entre threads : c'est elle qui fait tout le
 // travail de synchronisation du Lazy SMP. Les historiques restent locaux,
 // et leur divergence est justement ce qui diversifie les recherches.
+// Historiques que les fils peuvent partager (option cachee SharedHistories,
+// 13-11, d'apres Stockfish : corrections d'evaluation, historique des pions,
+// historique de continuation). Partages, les fils apprennent les uns des
+// autres ; a un seul fil, rien ne change.
+struct SharedHist {
+    PawnHistory         pawnHistory;
+    CorrectionHistory   correctionHistory;
+    CorrectionHistory   nonPawnCorrection[COLOR_NB];
+    CorrectionHistory   minorCorrection;
+    CorrectionHistory   majorCorrection;
+    ContinuationHistory continuationHistory[2][2];
+};
+extern bool SharedHistOn;   // option SharedHistories
+extern bool SmpVote;        // option SmpVote : choix du coup final par vote des fils
+
 class Thread {
    public:
-    Thread(std::size_t n);
+    Thread(std::size_t n, SharedHist* shared = nullptr);
     ~Thread();
 
     void clear();
@@ -54,15 +69,18 @@ class Thread {
     ButterflyHistory      mainHistory;
     LowPlyHistory         lowPlyHistory;  // remis a zero a chaque recherche
     CapturePieceToHistory captureHistory;
-    PawnHistory           pawnHistory;
-    CorrectionHistory     correctionHistory;
-    CorrectionHistory     nonPawnCorrection[COLOR_NB];  // [couleur des pieces][trait][cle]
-    CorrectionHistory     minorCorrection;  // [trait][cle cavaliers, fous et rois]
-    CorrectionHistory     majorCorrection;  // [trait][cle tours, dames et rois]
     CounterMoveHistory    counterMoves;
 
+    // Propres a ce fil, ou partages (SharedHist) : references vers l'un ou l'autre
+    SharedHist          own;
+    PawnHistory&        pawnHistory;
+    CorrectionHistory&  correctionHistory;
+    CorrectionHistory (&nonPawnCorrection)[COLOR_NB];  // [couleur des pieces][trait][cle]
+    CorrectionHistory&  minorCorrection;  // [trait][cle cavaliers, fous et rois]
+    CorrectionHistory&  majorCorrection;  // [trait][cle tours, dames et rois]
+
     // [le coup precedent etait-il une capture][donnait-il echec]
-    ContinuationHistory continuationHistory[2][2];
+    ContinuationHistory (&continuationHistory)[2][2];
 
     // [piece][case] du coup d'avant -> [piece][case] du coup precedent
     ContinuationCorrectionHistory continuationCorrectionHistory;
@@ -105,6 +123,7 @@ class ThreadPool {
    private:
     StateListPtr         setupStates;
     std::vector<Thread*> threads;
+    SharedHist*          shared = nullptr;
 };
 
 extern ThreadPool Threads;
