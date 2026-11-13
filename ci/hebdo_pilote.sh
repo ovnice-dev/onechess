@@ -2,9 +2,9 @@
 # Pilote de l'entrainement continu, sur GitHub (toutes les heures, hebdo.yml),
 # sans le PC. Etat porte par les releases du depot :
 #   - candidat-K (pre-release, deposee par le relais Kaggle) : onechess.nnue ;
-#   - reseau-K (release) : un reseau adopte, onechess.nnue + signature.txt.
+#   - vX.Y (release) : une version d Onechess ; un reseau adopte devient la version suivante.
 # Pour chaque candidat sans verdict : si sa vague en cours est finie, bilan ;
-# H1 -> release reseau-K (le bot d'Oracle la prend tout seul) ; H0 ou trop de
+# H1 -> release de la version suivante (le bot d'Oracle la prend tout seul) ; H0 ou trop de
 # vagues -> verdict ecrit dans la pre-release ; sinon, vague suivante. Le match
 # oppose le candidat au dernier reseau adopte, au temps, binaires identiques.
 #   GH_TOKEN, REPO dans l'environnement ; HEBDO_X : options de compilation (ex. -DONE_HIDDEN_SIZE=1024)
@@ -15,8 +15,13 @@ X=${HEBDO_X:-}
 [ -n "$X" ] && MODE="$MODE;x1=$X;x2=$X"
 url() { gh release view "$1" -R "$REPO" --json assets -q ".assets[] | select(.name==\"$2\") | .url"; }
 
-ref=$(gh release list -R "$REPO" --exclude-pre-releases --limit 50 --json tagName -q '.[].tagName' | grep '^reseau-' | head -1 || true)
-[ -n "$ref" ] || { echo "aucun reseau adopte (release reseau-*) : rien a juger"; exit 0; }
+# Reference : la derniere version publiee (vX.Y, depuis la 1.0 du 13-11) ; un reseau de la
+# semaine adopte devient la version suivante (v1.0 -> v1.1)
+ref=$(gh release list -R "$REPO" --exclude-pre-releases --limit 50 --json tagName,publishedAt \
+      -q '[.[] | select(.tagName | test("^v[0-9]+[.][0-9]+$"))] | sort_by(.publishedAt) | last | .tagName' || true)
+[ -n "$ref" ] && [ "$ref" != "null" ] || { echo "aucune version publiee (release vX.Y) : rien a juger"; exit 0; }
+maj=${ref#v}; maj=${maj%%.*}; mineur=${ref##*.}
+suivante="v$maj.$((mineur + 1))"
 REF_URL=$(url "$ref" onechess.nnue)
 echo "reference : $ref"
 
@@ -41,17 +46,17 @@ for cand in $(gh release list -R "$REPO" --limit 50 --json tagName,isPrerelease 
   fi
   case "$b" in
     *"VERDICT H1"*)
-      # Adoption : signature du moteur avec ce reseau, release reseau-K
+      # Adoption : signature du moteur avec ce reseau, release de la version suivante
       curl -sSfL "$CAND_URL" -o onechess.nnue
       g++ -std=c++20 -O3 -DNDEBUG -flto=auto -fno-exceptions -march=native -pthread $X -Iengine/fathom \
           engine/src/*.cpp engine/fathom/tbprobe.c -o moteur
       sig=$(printf 'setoption name EvalFile value onechess.nnue\nbench 12\nquit\n' | ./moteur | grep 'Noeuds totaux' | awk '{print $4}')
       echo "$sig" > signature.txt
-      gh release create "reseau-$K" onechess.nnue signature.txt -R "$REPO" --target main \
-         --title "Onechess, reseau de la semaine $K" \
-         --notes "Reseau de l'entrainement continu, semaine $K. Match au temps contre $ref : $(echo "$b" | tail -2 | head -1). Signature bench 12 : $sig."
+      gh release create "$suivante" onechess.nnue signature.txt -R "$REPO" --target main \
+         --title "Onechess ${suivante#v}" \
+         --notes "New network from continuous training (week $K). Time-control match against $ref: $(echo "$b" | tail -2 | head -1). bench 12 signature: $sig. Executables: build from source, or use those of the previous release with this network."
       gh release edit "$cand" -R "$REPO" --notes "$corps
-VERDICT H1 : adopte comme reseau-$K. $(echo "$b" | tail -2 | head -1)"
+VERDICT H1 : adopte comme $suivante. $(echo "$b" | tail -2 | head -1)"
       ;;
     *"VERDICT H0"*)
       gh release edit "$cand" -R "$REPO" --notes "$corps
