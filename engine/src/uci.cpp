@@ -262,7 +262,7 @@ void UCI::init(OptionsMap& o) {
 
     // Plusieurs fils (13-11, d'apres Stockfish ; caches, a tester au temps) :
     // historiques partages entre fils, et choix du coup final par vote.
-    o["SharedHistories"] << Option(false, [](const Option& opt) {
+    o["SharedHistories"] << Option(true, [](const Option& opt) {
         SharedHistOn = bool(opt);
         Threads.set(std::size_t(int(Options["Threads"])));
     });

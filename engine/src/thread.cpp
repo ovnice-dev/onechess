@@ -13,7 +13,7 @@
 namespace one {
 
 ThreadPool Threads;
-bool       SharedHistOn = false;
+bool       SharedHistOn = true;    // adopte le 13-11 : SharedHist4 H1, +16,2 a 4 fils
 bool       SmpVote      = false;
 
 Thread::Thread(std::size_t n, SharedHist* shared) :
