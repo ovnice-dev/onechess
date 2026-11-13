@@ -22,7 +22,7 @@
 
 namespace one {
 
-std::string engine_info() { return "Onechess 0.1"; }
+std::string engine_info() { return "Onechess 1.0"; }
 
 #if defined(_WIN32)
 
