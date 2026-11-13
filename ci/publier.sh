@@ -6,14 +6,14 @@
 # locale `public`, dont l'arbre est celui de main moins les fichiers PRIVES.
 set -e
 cd /c/Onechess
-PRIVES="ROADMAP.md RECHERCHES.md JOURNAL.md REPRENDRE.md PHASE10.md .github/workflows/kaggle_nuit.yml ci/kaggle_nuit/run.py ci/kaggle_nuit/kernel-metadata.json"
+PRIVES="sortie ROADMAP.md RECHERCHES.md JOURNAL.md REPRENDRE.md PHASE10.md .github/workflows/kaggle_nuit.yml ci/kaggle_nuit/run.py ci/kaggle_nuit/kernel-metadata.json"
 MSG=${1:-"Mise a jour"}
 export GIT_AUTHOR_NAME=ovnice GIT_COMMITTER_NAME=ovnice
 export GIT_AUTHOR_EMAIL=268732922+ovnice-dev@users.noreply.github.com
 export GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL
 IDX=$(mktemp); rm -f "$IDX"
 GIT_INDEX_FILE=$IDX git read-tree main
-GIT_INDEX_FILE=$IDX git rm --cached -q --ignore-unmatch $PRIVES
+GIT_INDEX_FILE=$IDX git rm -r --cached -q --ignore-unmatch $PRIVES
 arbre=$(GIT_INDEX_FILE=$IDX git write-tree); rm -f "$IDX"
 if git rev-parse -q --verify refs/heads/public >/dev/null; then
   [ "$(git rev-parse public^{tree})" = "$arbre" ] && { echo "rien de neuf a publier"; exit 0; }
