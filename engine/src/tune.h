@@ -64,66 +64,23 @@
     X(CorrContWeight,                 1,     0,     8) \
     X(CorrMinorWeight,                1,     0,     8) \
     X(CorrMajorWeight,                1,     0,     8) \
-    X(TtCutRefine,                    0,     0,     1) \
     X(ThreatHist,                     1,     0,     1) \
-    X(FutValue,                       0,     0,     1) \
     X(CapFutility,                    1,     0,     1) \
     X(ProbcutSf,                      1,     0,     1) \
-    X(SmallProbcut,                   0,     0,   800) \
     X(IirSf,                          1,     0,     1) \
-    X(NegExtSf,                       0,     0,     1) \
-    X(MultiCutSf,                     0,     0,     1) \
-    X(ImprovingBeta,                  0,     0,     1) \
-    X(RfpOppW,                        0,     0,   200) \
     X(PostLmrSf,                      1,     0,     1) \
-    X(NoKillers,                      0,     0,     1) \
-    X(NoCounter,                      0,     0,     1) \
-    X(LmrFrac,                        0,     0,     1) \
-    X(LmrAllScale,                    0,     0,     1) \
-    X(LmrAlphaEval,                   0,     0,     1) \
-    X(LmrCutoffSf,                    0,     0,     1) \
     X(BadQuiets,                      14000,     0, 30000) \
-    X(MultiCutCorr,                   0,     0,     1) \
-    X(TtCutHistSf,                    0,     0,     1) \
-    X(RfpOwn,                         0,     0,     1) \
-    X(QsFailFirm,                     0,     0,     1) \
     X(ContHist6,                      1,     0,     1) \
     X(EvalDiffHist,                   1,     0,     1) \
-    X(ContWeightsSf,                  0,     0,     1) \
-    X(BonusSf,                        0,     0,     1) \
     X(ThreatOrder,                    49,     0,    96) \
-    X(CheckSeeMargin,                 0,     0,   400) \
-    X(LowPlyHist,                     0,     0,    16) \
-    X(CapStatMul,                     0,     0,  4000) \
     X(MalusDecay,                   933,   512,  1024) \
     X(LmrDeeperMargin,                53,     0,   200) \
     X(LmrShallowerMargin,             8,     0,    60) \
     X(Hindsight,                      1,     0,     1) \
     X(ExtLimit,                       1,     0,     1) \
-    X(TripleExtMargin,                0,     0,   200) \
-    X(DoubleExtCap,                   0,     0,    20) \
-    X(LmrCorr,                        0,     0,   300) \
-    X(LmrCheck,                       0,     0,     1) \
-    X(FailHighSoft,                   0,     0,     1) \
-    X(AlphaDepthRed,                  0,     0,     1) \
-    X(HistBoost,                      0,     0,   200) \
-    X(IirShallow,                     0,     0,     1) \
-    X(LmrTtpvFailLow,                 0,     0,     1) \
-    X(LmrAlphaRaise,                  0,     0,     1) \
-    X(Ldse,                           0,     0,   200) \
-    X(ExtNegCut,                      0,     0,     1) \
-    X(CausalRed,                      0,     0,  2048) \
-    X(DrawJitter,                     0,     0,     1) \
-    X(RootTtSave,                     0,     0,     1) \
     X(RfpCorr,                        0,     0,   256) \
     X(InsufMat,                       0,     0,     1) \
-    X(CorrExpert,                     0,     0,     1) \
-    X(UpRepJ,                         0,     0,     1) \
     X(K1Ext,                          0,     0,     3) \
-    X(R6Margin,                       0,     0,   400) \
-    X(PcAdapt,                        0,     0,   400) \
-    X(FutCorr,                        0,     0,   256) \
-    X(FirstLmr,                       0,     0,    10)     X(RazorAll,                       0,     0,   700)     X(NmpOddThread,                   0,     0,     1) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
@@ -133,15 +90,8 @@
     X(TmNoStartPct,              60,    30,   100) \
     X(TmInstMul,                  250,     0,  1000) \
     X(TmClockPct,                 900,     0,  1000) \
-    X(TmSfAlloc,                      0,     0,     1) \
     X(TmSurprisePct,                130,   100,   250) \
-    X(TmLowMtg,                       0,     0,     1) \
-    X(TmDefendPct,                    0,     0,  1000) \
-    X(TmDefendFrom,                  45,     0,   300) \
-    X(TmDefendTo,                   360,   100,  1500) \
-    X(TmEarlySave,                    0,     0,   500) \
                                                        \
-    X(Rule50Damp,                     0,     0,   512)
 
 namespace one {
 namespace Tune {

@@ -34,11 +34,6 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int mov
     // Au-dela de 50 coups a jouer, la difference d'allocation est negligeable
     int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
 
-    // Sous la seconde, en mort subite : on suppose beaucoup moins de coups a
-    // jouer, ce qui empeche de s'endetter en fin de partie. Stockfish.
-    if ((TmSfAlloc || TmLowMtg) && limits.movestogo == 0 && limits.time[us] < 1000)
-        mtg = std::max(1, int(limits.time[us] * 0.05));
-
     // Temps reellement utilisable, une fois retiree la latence d'echange avec
     // l'interface sur chaque coup restant.
     TimePoint timeLeft = std::max<TimePoint>(
@@ -50,29 +45,9 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int mov
     {
         // Cadence a mort subite : la part monte en racine avec le numero de
         // coup, et reste bornee par une fraction du temps reellement restant.
-        if (TmSfAlloc)
-        {
-            // Repartition de Stockfish : un facteur fixe pour la partie, tire
-            // du temps disponible au premier coup, et des constantes qui
-            // dependent du logarithme du temps restant. A 10+0,1, au 20e coup,
-            // elle depense 13 % de moins sur le coup ordinaire et s'autorise
-            // 21 % de plus sur le coup critique que notre ancienne formule.
-            if (originalTimeAdjust < 0)
-                originalTimeAdjust = 0.3272 * std::log10(double(timeLeft)) - 0.4141;
-            const double logTime = std::log10(std::max(1.0, double(limits.time[us])) / 1000.0);
-            const double optC    = std::min(0.0029869 + 0.00033554 * logTime, 0.004905);
-            const double maxC    = std::max(3.3744 + 3.0608 * logTime, 3.1441);
-            optScale = std::min(0.012112 + std::pow(ply + 3.22713, 0.46866) * optC,
-                                0.19404 * double(limits.time[us]) / double(timeLeft))
-                     * originalTimeAdjust;
-            maxScale = std::min(6.873, maxC + ply / 12.352);
-        }
-        else
-        {
-            optScale = std::min(0.0084 + std::pow(ply + 3.0, 0.5) * 0.0042,
-                                0.20 * double(limits.time[us]) / double(timeLeft));
-            maxScale = std::min(7.0, 4.0 + ply / 12.0);
-        }
+        optScale = std::min(0.0084 + std::pow(ply + 3.0, 0.5) * 0.0042,
+                            0.20 * double(limits.time[us]) / double(timeLeft));
+        maxScale = std::min(7.0, 4.0 + ply / 12.0);
     }
     else
     {
@@ -90,13 +65,10 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply, int mov
         optScale *= 1.0 + TmClockPct / 1000.0 * std::min(avantage, 0.0);
     }
 
-    // TmEarlySave (Triumviratus 8.0) : avec 24 pieces ou plus, les erreurs
-    // sont rares des deux cotes ; on garde le temps pour plus tard.
-    if (TmEarlySave && pieces >= 24)
-        optScale *= 1.0 - TmEarlySave / 1000.0;
+    (void) pieces;   // TmEarlySave, rejete
 
     optimumTime = TimePoint(optScale * double(timeLeft));
-    maximumTime = TimePoint(std::min((TmSfAlloc ? 0.8097 : 0.84) * double(limits.time[us]) - moveOverhead,
+    maximumTime = TimePoint(std::min(0.84 * double(limits.time[us]) - moveOverhead,
                                      maxScale * double(optimumTime)));
 
     optimumTime = std::max<TimePoint>(optimumTime, 1);

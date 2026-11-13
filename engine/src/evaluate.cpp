@@ -185,25 +185,6 @@ void init() {
         }
 }
 
-// Amortissement par la regle des 50 coups.
-//
-// Un avantage materiel ne vaut plus rien si la nulle tombe avant qu'on ait pu
-// le convertir. Le reseau, lui, ne voit pas le compteur : il donnera le meme
-// score a 5 coups de la nulle qu'au debut de la partie. Rapprocher
-// l'evaluation de zero a mesure que le compteur monte pousse le moteur a
-// remettre les pendules a l'heure -- pousser un pion, prendre -- tant qu'il
-// le peut encore.
-//
-// DESACTIVE par defaut (Rule50Damp = 0) : tant que ce n'est pas mesure, cela
-// ne doit rien changer au jeu.
-inline Value damp_rule50(Value v, const Position& pos) {
-    const int d = Tune::Rule50Damp;
-    if (!d || std::abs(int(v)) >= VALUE_TB_WIN_IN_MAX_PLY)
-        return v;    // un score de mat n'est pas une quantite a amortir
-
-    return Value(int(v) * std::max(0, d - pos.rule50_count()) / d);
-}
-
 // Evaluation completement recalculee. Elle rend le score du point de vue du
 // camp au trait, tempo compris.
 Value evaluate(const Position& pos) {
@@ -211,7 +192,7 @@ Value evaluate(const Position& pos) {
     // Des qu'un reseau est charge, il remplace entierement l'evaluation
     // manuelle. Celle-ci reste comme filet de securite et point de comparaison.
     if (NNUE::loaded())
-        return damp_rule50(NNUE::evaluate(pos), pos);
+        return NNUE::evaluate(pos);
 
     int mg = 0, eg = 0, phase = 0;
 
@@ -233,8 +214,7 @@ Value evaluate(const Position& pos) {
 
     // Le tempo est ajoute APRES le changement de repere : il appartient au
     // camp au trait, pas aux blancs.
-    return damp_rule50(
-      Value((pos.side_to_move() == WHITE ? score : -score) + TempoBonus), pos);
+    return Value((pos.side_to_move() == WHITE ? score : -score) + TempoBonus);
 }
 
 std::string trace(const Position& pos) {

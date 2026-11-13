@@ -17,13 +17,12 @@ class TimeManagement {
     TimePoint elapsed() const { return now() - startTime; }
 
     // Nouvelle partie : le facteur de partie sera recalcule au premier coup.
-    void new_game() { originalTimeAdjust = -1.0; }
+    void new_game() {}
 
    private:
     TimePoint startTime   = 0;
     TimePoint optimumTime = 0;
     TimePoint maximumTime = 0;
-    double    originalTimeAdjust = -1.0;  // facteur de partie, mode TmSfAlloc
 };
 
 extern TimeManagement Time;

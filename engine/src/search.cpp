@@ -50,10 +50,8 @@ enum NodeType {
 // Table de reduction des coups tardifs, reconstruite a chaque changement des
 // constantes pour que le reglage par UCI prenne effet sans recompilation.
 int LMRTable[64][64];
-int LMRTableF[64][64];  // la meme, en 1/1024 de pli (LmrFrac)
 
 Depth reduction(Depth d, int mn) { return LMRTable[std::min(int(d), 63)][std::min(mn, 63)]; }
-int   reduction_f(Depth d, int mn) { return LMRTableF[std::min(int(d), 63)][std::min(mn, 63)]; }
 
 // La marge se resserre quand la position s'ameliore : l'evaluation a plus de
 // chances de tenir, donc on ose couper de plus pres. C'est le sens qui compte
@@ -137,15 +135,7 @@ inline Key major_key(const Position& pos) {
          ^ bb_mix(pos.pieces(WHITE, KING), 0xbb) ^ bb_mix(pos.pieces(BLACK, KING), 0xcc);
 }
 
-// CorrExpert (Triumviratus, +3,2 chez lui) : la correction des structures de
-// pions est tenue a part pour chaque expert de materiel du reseau (mat4) : la
-// meme structure ne se juge pas pareil avec ou sans les pieces.
-inline Key pawn_corr_key(const Position& pos) {
-    if (!CorrExpert)
-        return pos.pawn_key();
-    const int b = std::min(3, (popcount(pos.pieces()) - 2) / 8);
-    return pos.pawn_key() ^ (Key(b + 1) * 0x9E3779B97F4A7C15ULL);
-}
+inline Key pawn_corr_key(const Position& pos) { return pos.pawn_key(); }
 
 Value corrected_eval(Value v, const Thread* th, const Position& pos, const Stack* ss) {
     PROF_SCOPE(CORR);
@@ -208,29 +198,6 @@ inline void prefetch_corr(const Position& pos, const Thread* th, const Stack* ss
 // Un coup est juge sur la reponse qu'il apporte au coup precedent (pli 1),
 // mais aussi sur la facon dont il prolonge notre propre plan (plis 2, 4, 6).
 void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
-    // ContWeightsSf : poids propres a chaque pli et multiplicateur de
-    // coherence (plus d'entrees deja positives, plus de poids), Stockfish.
-    if (ContWeightsSf)
-    {
-        static constexpr int plis[]  = {1, 2, 3, 4, 6};
-        static constexpr int poids[] = {520, 390, 145, 251, 209};
-        static constexpr int coh[]   = {94, 103, 110, 106, 119, 126};
-        int                  positifs = 0;
-        for (int k = 0; k < 5; ++k)
-        {
-            const int i = plis[k];
-            if (ss->inCheck && i > 2)
-                break;
-            if ((ss - i)->currentMove.is_ok())
-            {
-                auto& e = (*(ss - i)->continuationHistory)[pc][to];
-                positifs += e > 0;
-                e << bonus * poids[k] * coh[positifs] / 65536 + 73 * (i < 2);
-            }
-        }
-        return;
-    }
-
     for (int i : {1, 2, 3, 4, 6})
     {
         if (ss->inCheck && i > 2)
@@ -278,24 +245,14 @@ void update_all_stats(const Position& pos,
                       Move*           capturesSearched,
                       int             captureCount,
                       Depth           depth,
-                      Move            ttMove,
-                      bool            pvNode) {
+                      Move            /*ttMove*/,
+                      bool            /*pvNode*/) {
     PROF_SCOPE(HISTUPD);
 
     const Piece     moved        = pos.moved_piece(bestMove);
     const PieceType capturedType = type_of(pos.piece_on(bestMove.to_sq()));
     int             bonus        = stat_bonus(depth);
 
-    // BonusSf : le bonus grandit si le meilleur coup etait celui de la table,
-    // selon le statScore du coup precedent, et -- hors PV -- avec le nombre de
-    // coups qu'il a fallu essayer avant de le trouver. Stockfish.
-    if (BonusSf)
-    {
-        bonus += 364 * (bestMove == ttMove) * bonus / 1487 + (ss - 1)->statScore / 28;
-        bonus = std::max(bonus, 0);
-        if (!pvNode)
-            bonus += int(std::int64_t(bonus) * (quietCount + captureCount) / 256);
-    }
     const int       malus        = stat_malus(depth);
 
     if (!pos.capture_stage(bestMove))
@@ -396,13 +353,6 @@ void Search::init() {
                              : int(LmrBase / 100.0
                                    + std::log(double(d)) * std::log(double(m))
                                        / (LmrDivisor / 100.0));
-    for (int d = 0; d < 64; ++d)
-        for (int m = 0; m < 64; ++m)
-            LMRTableF[d][m] = (d == 0 || m == 0)
-                              ? 0
-                              : int(1024.0 * (LmrBase / 100.0
-                                               + std::log(double(d)) * std::log(double(m))
-                                                   / (LmrDivisor / 100.0)));
 }
 
 // Regle de surprise (Triumviratus) : la position qu'on attendait apres notre
@@ -602,11 +552,6 @@ void Thread::iterative_deepening() {
             if (surprise)
                 factor *= TmSurprisePct / 100.0;
 
-            // Defense pas encore perdue (Triumviratus 8.0, +7,3 avec
-            // TmEarlySave) : c'est la que se perdent les parties a la pendule.
-            if (TmDefendPct && bestValue <= -TmDefendFrom && bestValue > -TmDefendTo)
-                factor *= 1.0 + TmDefendPct / 1000.0;
-
             // Un seul coup legal : rien a chercher
             const bool forced = TmSingleMs && rootMoves.size() == 1
                              && Time.elapsed() >= std::min<TimePoint>(TmSingleMs, Time.optimum());
@@ -798,10 +743,6 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
 
         if (bestValue >= beta)
         {
-            // QsFailFirm : le stand-pat rend la moyenne avec beta plutot que
-            // l'evaluation entiere (« fail-firm » de Stockfish).
-            if (QsFailFirm && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY)
-                bestValue = (bestValue + beta) / 2;
             if (!ttHit)
                 tte->save(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
                           DEPTH_ENTRY_TT + 1, Move::none(), unadjustedStaticEval,
@@ -916,9 +857,6 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
         return mated_in(ss->ply);
     }
 
-    if (QsFailFirm && bestValue >= beta && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY)
-        bestValue = (bestValue + beta) / 2;
-
     tte->save(posKey, value_to_tt(bestValue, ss->ply), pvHit,
               bestValue >= beta    ? BOUND_LOWER
               : PvNode && bestValue > oldAlpha ? BOUND_EXACT
@@ -955,11 +893,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture;
     bool  capture, ttCapture;
-    int   moveCount, captureCount, quietCount, alphaRaises = 0;
-    // CausalRed : cases de la refutation du dernier tranquille sous alpha
-    Bitboard causal = 0;
-    // R6 : ecart entre le score du coup de table et celui de la recherche singuliere
-    int singularGap = 0;
+    int   moveCount, captureCount, quietCount;
 
     Value unadjustedStaticEval = VALUE_NONE;
 
@@ -984,20 +918,9 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !ss->inCheck)
                    ? Eval::evaluate(pos)
-                   // DrawJitter : nulle a -1 ou +1 selon le compteur de noeuds,
-                   // pour ne pas figer la recherche sur les lignes de repetition
-                   // (value_draw de Stockfish).
-                   : DrawJitter ? Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2))
-                                : VALUE_DRAW;
+                   : VALUE_DRAW;
 
-        // UpRepJ : un coup ramene une position deja vue, la nulle est donc
-        // accessible ; alpha monte a une nulle bruitee (Stockfish).
-        if (UpRepJ && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
-        {
-            alpha = Value(VALUE_DRAW - 1 + int(thisThread->nodes.load(std::memory_order_relaxed) & 2));
-            if (alpha >= beta)
-                return alpha;
-        }
+
 
         // Elagage par distance au mat : inutile de chercher un mat plus long
         // que celui qu'on tient deja.
@@ -1043,44 +966,22 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     // rendrait le score obtenu avec le coup qu'on vient justement d'exclure.
     if (!PvNode && !excludedMove && ttHit && tte->depth() > depth - (ttValue <= beta)
         && ttValue != VALUE_NONE
-        && (tte->bound() & (ttValue >= beta ? BOUND_LOWER : BOUND_UPPER))
-        // TtCutRefine : a faible profondeur, on ne coupe que si le sens de la
-        // coupure correspond au type de noeud attendu. Stockfish.
-        && (!TtCutRefine || cutNode == (ttValue >= beta) || depth > 4))
+        && (tte->bound() & (ttValue >= beta ? BOUND_LOWER : BOUND_UPPER)))
     {
         if (ttMove && ttValue >= beta)
         {
             if (!ttCapture)
-                update_quiet_stats(pos, ss, thisThread, ttMove,
-                                   TtCutHistSf ? 131 * depth : stat_bonus(depth), threat_map(pos));
+                update_quiet_stats(pos, ss, thisThread, ttMove, stat_bonus(depth), threat_map(pos));
 
             // Le coup precedent a permis cette coupure : il etait mauvais.
-            // TtCutHistSf : malus fixe, pour les 4 premiers coups (Stockfish).
-            if (prevSq != SQ_NONE && (ss - 1)->moveCount <= (TtCutHistSf ? 4 : 2) && !priorCapture)
+            if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 2 && !priorCapture)
                 update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                              TtCutHistSf ? -2210 : -stat_malus(depth + 1));
+                                              -stat_malus(depth + 1));
         }
 
         // Sous la regle des 50 coups la position n'est plus vraiment la meme
         if (pos.rule50_count() < 90)
-        {
-            // TtCutRefine, en profondeur : la position atteinte par le coup de
-            // table doit confirmer la coupure. Parade partielle au probleme
-            // d'interaction entre le graphe et l'historique. Stockfish.
-            if (TtCutRefine && depth >= 7 && ttMove && pos.pseudo_legal(ttMove)
-                && pos.legal(ttMove) && std::abs(ttValue) < VALUE_TB_WIN_IN_MAX_PLY)
-            {
-                pos.do_move(ttMove, st, pos.gives_check(ttMove));
-                bool           nextHit;
-                const TTEntry* next  = TT.probe(pos.key(), nextHit);
-                const Value    nextV = nextHit ? next->value() : VALUE_NONE;
-                pos.undo_move(ttMove);
-                if (nextV == VALUE_NONE || (ttValue >= beta) == (-nextV >= beta))
-                    return ttValue;
-            }
-            else
-                return ttValue;
-        }
+            return ttValue;
     }
 
     // ------------------------------------------------ tables de finale
@@ -1180,11 +1081,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     }
 
     // --------------------------------------------------------- razoring
-    // RazorAll (Stockfish, 2026) : le razoring est une coupure basse, il n'a
-    // sa place qu'aux noeuds ALL attendus ; la marge (RazorAll) est alors
-    // plus serree pour garder a peu pres le meme nombre de coupures.
-    if (!PvNode && depth <= RazorMaxDepth && (!RazorAll || !cutNode)
-        && eval + (RazorAll ? RazorAll : RazorMargin) * depth < alpha)
+    if (!PvNode && depth <= RazorMaxDepth && eval + RazorMargin * depth < alpha)
     {
         // Contrairement au RFP, ce n'est pas une coupure seche : on verifie
         // par une quiescence avant de rendre.
@@ -1194,17 +1091,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
     }
 
     // ---------------------------------------- reverse futility (RFP)
-    // RfpOppW : marge reduite quand l'evaluation adverse s'est degradee au
-    // pli precedent (opponentWorsening de Stockfish). Inerte a 0.
     if (!ss->ttPv && depth <= RfpMaxDepth
-        && eval
-               - (RfpOwn ? Value((std::min(45 + 4 * int(depth), 85) - 20 * !ttHit) * depth
-                                 - 2789 * improving * (std::min(45 + 4 * int(depth), 85) - 20 * !ttHit)
-                                     / 1024)
-                         : futility_margin(depth, improving))
-               + RfpOppW * ((ss - 1)->staticEval != VALUE_NONE
-                                     && ss->staticEval > -(ss - 1)->staticEval)
-               - (ss - 1)->statScore / 300
+        && eval - futility_margin(depth, improving) - (ss - 1)->statScore / 300
                // RfpCorr : forte correction = evaluation incertaine, marge
                // elargie d'autant (Stockfish, Reckless).
                - RfpCorr * ss->corrAbs / 64 >= beta
@@ -1217,12 +1105,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
         && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
         && beta > VALUE_TB_LOSS_IN_MAX_PLY)
     {
-        // NmpOddThread (Stockfish, 2026) : les fils impairs reduisent le coup
-        // nul d'un pli de moins, pour que les fils n'explorent pas tous le
-        // meme arbre. Sans effet a un seul fil.
         const Depth R = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR)
-                      + depth / NmpDepthDiv + NmpBaseReduction
-                      - (NmpOddThread && (thisThread->index() & 1));
+                      + depth / NmpDepthDiv + NmpBaseReduction;
 
         ss->currentMove         = Move::null();
         ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][SQ_A1];
@@ -1252,11 +1136,6 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
                 return nullValue;
         }
     }
-
-    // ImprovingBeta : une position dont l'eval statique bat deja beta est
-    // traitee comme en progres pour la suite (Stockfish).
-    if (ImprovingBeta && ss->staticEval >= beta)
-        improving = true;
 
     // ----------------------------------------------------------- ProbCut
     // ProbcutSf : marge reduite quand la position progresse, et profondeur
@@ -1296,10 +1175,6 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, 0);
 
             Depth pcDepth = ProbcutSf ? depth - (improving ? 5 : 3) : depth - 4;
-            // PcAdapt (R12, V4) : plus la quiescence depasse, plus la
-            // verification est courte, aux noeuds CUT seulement.
-            if (PcAdapt && cutNode && value >= probCutBeta)
-                pcDepth -= std::clamp(int(value - probCutBeta) / PcAdapt, 0, 3);
             if (value >= probCutBeta && pcDepth > 0)
                 value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
                                        pcDepth, !cutNode);
@@ -1338,23 +1213,10 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
             depth -= 2;
     }
 
-    // IirShallow : meme avec un coup de table, une entree trop peu profonde
-    // trie mal un noeud CUT (PlentyChess, Viridithas, Caissa).
-    if (IirShallow && cutNode && ttHit && ttMove && depth >= 8 && tte->depth() + 4 <= depth)
-        depth -= 1;
-
     if (depth <= 0)
         return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta, 0);
 
 moves_loop:
-
-    // SmallProbcut : une borne basse de table, presque assez profonde et tres
-    // au-dessus de beta, suffit a couper (Stockfish, « small ProbCut »).
-    if (SmallProbcut && !rootNode && !excludedMove && ttHit && ttValue != VALUE_NONE
-        && (tte->bound() & BOUND_LOWER) && tte->depth() >= depth - 4
-        && ttValue >= beta + SmallProbcut && std::abs(beta) < VALUE_TB_WIN_IN_MAX_PLY
-        && std::abs(ttValue) < VALUE_TB_WIN_IN_MAX_PLY)
-        return beta + SmallProbcut;
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory,
@@ -1450,18 +1312,9 @@ moves_loop:
                 if (!ss->inCheck && lmrDepth <= FutilityMaxDepth)
                 {
                     const Value futVal =
-                      Value(ss->staticEval + FutilityMargin * (lmrDepth + 1) + history / 200
-                            // FutCorr (R1) : evaluation incertaine, marge elargie
-                            + FutCorr * ss->corrAbs / 64);
+                      Value(ss->staticEval + FutilityMargin * (lmrDepth + 1) + history / 200);
                     if (futVal <= alpha)
-                    {
-                        // FutValue : le score rendu tient compte du coup elague
-                        if (FutValue && bestValue <= futVal
-                            && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY
-                            && futVal < VALUE_TB_WIN_IN_MAX_PLY)
-                            bestValue = futVal;
                         continue;
-                    }
                 }
 
                 if (!pos.see_ge(move, -SeeQuietMargin * lmrDepth * lmrDepth))
@@ -1493,44 +1346,26 @@ moves_loop:
             if (value < singularBeta)
             {
                 extension = 1;
-                // R6 : de combien le coup de table domine-t-il les autres ?
-                singularGap = int(ttValue - value);
                 // K1Ext : le pere avait reduit ce noeud, mais son coup de table
                 // est singulier : on lui rend (une partie de) la reduction.
                 if (K1Ext && priorReduction > 0)
                     extension += std::min(priorReduction, int(K1Ext));
 
-                // Nettement singulier : on creuse encore. DoubleExtCap borne le
-                // nombre d'extensions doubles sur la ligne ; TripleExtMargin
-                // ajoute un troisieme pli pour un tranquille tres singulier.
-                if (!PvNode && value < singularBeta - SingularExtraMargin
-                    && (!DoubleExtCap || (ss - 1)->doubleExt < DoubleExtCap))
-                {
+                // Nettement singulier : on creuse encore
+                if (!PvNode && value < singularBeta - SingularExtraMargin)
                     extension = 2;
-                    if (TripleExtMargin && !ttCapture && value < singularBeta - TripleExtMargin)
-                        extension = 3;
-                }
             }
 
             // Le coup de TT n'est pas singulier et il bat deja beta : la
-            // position entiere coupe, inutile de la fouiller. MultiCutSf : on
-            // rend le score trouve des que celui-ci bat beta (Stockfish).
-            else if (MultiCutSf ? value >= beta && std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY
-                                : singularBeta >= beta)
-            {
-                if (MultiCutCorr && !ss->inCheck && value > ss->staticEval)
-                    update_correction_history(
-                      pos, ss, thisThread,
-                      std::clamp(int(value - ss->staticEval) * 664 / 1024,
-                                 -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4));
-                return MultiCutSf ? value : singularBeta;
-            }
+            // position entiere coupe, inutile de la fouiller.
+            else if (singularBeta >= beta)
+                return singularBeta;
 
             else if (ttValue >= beta)
-                extension = NegExtSf ? -3 : -2;
+                extension = -2;
 
             else if (cutNode)
-                extension = NegExtSf ? -3 : -1;
+                extension = -1;
         }
 
         // Extension d'echec, sous condition : un echec qui perd du materiel
@@ -1538,19 +1373,6 @@ moves_loop:
         // decroit jamais dans une sequence d'echecs.
         else if (givesCheck && depth > 8 && pos.see_ge(move))
             extension = 1;
-
-        // Ldse : sous la profondeur de l'extension singuliere, un noeud CUT
-        // dont l'evaluation est bien sous alpha prolonge son coup de table
-        // sans recherche d'exclusion (Reckless, Stormphrax).
-        else if (Ldse && move == ttMove && !rootNode && !excludedMove && depth <= 7
-                 && !ss->inCheck && cutNode && ttHit && (tte->bound() & BOUND_LOWER)
-                 && ss->staticEval <= alpha - Ldse)
-            extension = 1;
-
-        // ExtNegCut : une extension negative annonce une coupure : le noeud
-        // est traite comme CUT pour la suite (Stormphrax).
-        if (ExtNegCut && extension < 0)
-            cutNode = true;
 
         newDepth += extension;
 
@@ -1572,13 +1394,9 @@ moves_loop:
           rootNode ? thisThread->nodes.load(std::memory_order_relaxed) : 0;
         thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
         pos.do_move(move, st, givesCheck);
-        (ss + 1)->refute = Move::none();
 
         // --------------------------------------------------------- LMR
         Depth r = reduction(depth, moveCount);
-        // LmrFrac : la meme reduction, comptee en 1/1024 de pli ; les
-        // retouches de Stockfish (fractions de pli) n'existent qu'ainsi.
-        int rf = LmrFrac ? reduction_f(depth, moveCount) : 0;
 
         if (ss->ttPv)
             r -= 1;
@@ -1590,33 +1408,7 @@ moves_loop:
             r += 1;
         if (!improving)
             r += 1;
-        // LmrCorr : forte correction d'evaluation = position incertaine, on
-        // reduit moins (Reckless, PlentyChess, Stormphrax, Viridithas...).
-        if (LmrCorr && ss->corrAbs >= LmrCorr)
-            r -= 1;
-        // LmrCheck : un coup qui donne echec est moins reduit.
-        if (LmrCheck && givesCheck)
-            r -= 1;
-        // LmrTtpvFailLow : ancien PV mais la table le donne sous alpha
-        // (PlentyChess, Viridithas, Stormphrax).
-        if (LmrTtpvFailLow && ss->ttPv && ttHit && ttValue != VALUE_NONE && ttValue <= alpha)
-            r += 1;
-        // LmrAlphaRaise : alpha deja ameliore dans ce noeud (Stormphrax, Viridithas).
-        if (LmrAlphaRaise && alphaRaises)
-            r += 1;
-        // CausalRed (Triumviratus 8.0, +4,3 chez lui) : un tranquille qui ne
-        // part ni n'arrive sur les cases de la refutation d'un frere ne change
-        // rien contre elle ; reduit de CausalRed/1024 de pli en moyenne (le
-        // compteur de noeuds sert de tirage, nos reductions sont entieres).
-        if (CausalRed && causal && !capture && !givesCheck && move != ttMove
-            && !((square_bb(move.from_sq()) | move.to_sq()) & causal))
-            r += (CausalRed + int(thisThread->nodes.load(std::memory_order_relaxed) & 1023)) >> 10;
-        if (LmrFrac && LmrCutoffSf)
-        {
-            if ((ss + 1)->cutoffCnt > 1)
-                rf += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * (!PvNode && !cutNode);
-        }
-        else if ((ss + 1)->cutoffCnt > 3)
+        if ((ss + 1)->cutoffCnt > 3)
             r += 1;
 
         if (!capture)
@@ -1626,56 +1418,13 @@ moves_loop:
                           + (*contHist[1])[movedPiece][move.to_sq()]
                           + (*contHist[3])[movedPiece][move.to_sq()] - 3800;
 
-            if (LmrFrac)
-                rf -= int(std::int64_t(ss->statScore) * 1024 / LmrHistDiv);
-            else
-                r -= ss->statScore / LmrHistDiv;
-        }
-        // Une prise a elle aussi un historique : sans lui, bonnes et mauvaises
-        // prises sont reduites pareil. Valeur de la piece prise plus historique
-        // des prises, repris de Stockfish. Inerte tant que CapStatMul vaut 0.
-        else if (CapStatMul)
-        {
-            const Piece captured = pos.captured_piece();
-            ss->statScore = CapStatMul * int(PieceValue[captured]) / 128
-                          + thisThread->captureHistory[movedPiece][move.to_sq()][type_of(captured)];
-
-            if (LmrFrac)
-                rf -= int(std::int64_t(ss->statScore) * 1024 / LmrHistDiv);
-            else
-                r -= ss->statScore / LmrHistDiv;
+            r -= ss->statScore / LmrHistDiv;
         }
         else
             ss->statScore = 0;
 
-        if (LmrFrac)
-        {
-            // Les retouches entieres faites plus haut sur r passent dans rf
-            rf += 1024 * (r - reduction(depth, moveCount));
 
-            // LmrAlphaEval : un tranquille joue loin sous alpha est reduit plus
-            if (LmrAlphaEval && !capture && !ss->inCheck && std::abs(alpha) < VALUE_TB_WIN_IN_MAX_PLY)
-                rf += 3 * std::clamp(int(alpha - ss->staticEval), -64, 96);
-
-            // LmrAllScale : reductions grossies aux noeuds ALL attendus
-            if (LmrAllScale && !PvNode && !cutNode)
-                rf += rf * 276 / (256 * depth + 268);
-
-            r = rf / 1024;
-        }
-
-        // R6Margin : coup de table tres dominant, les autres sont moins credibles
-        if (R6Margin && move != ttMove && singularGap > R6Margin)
-            r += 1;
-
-        // FirstLmr (R4, Reckless) : aux noeuds non-PV, meme le premier coup
-        // est reduit d'un pli quand la reduction calculee est grande.
-        const bool firstRed =
-          FirstLmr && !PvNode && !rootNode && moveCount == 1 && depth >= 2 && r >= FirstLmr;
-        if (firstRed)
-            r = 1;
-
-        if (depth >= 2 && (moveCount > 1 + rootNode || firstRed))
+        if (depth >= 2 && moveCount > 1 + rootNode)
         {
             // Fenetre nulle a profondeur reduite. Si le coup bat alpha malgre
             // la reduction, il faut le rechercher pour de bon.
@@ -1731,20 +1480,6 @@ moves_loop:
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
-        // CausalRed : le coup adverse qui refute ce tranquille marque les
-        // cases du probleme : depart, arrivee, et ce qu'il attaque de la.
-        if (CausalRed && !capture && value <= alpha && (ss + 1)->refute.is_ok())
-        {
-            const Move  rm = (ss + 1)->refute;
-            const Piece pc = pos.piece_on(rm.from_sq());
-            if (pc != NO_PIECE)
-            {
-                const PieceType pt = type_of(pc);
-                causal = (pt == PAWN ? pawn_attacks_bb(color_of(pc), rm.to_sq())
-                                     : attacks_bb(pt, rm.to_sq(), pos.pieces()))
-                       | rm.from_sq() | rm.to_sq();
-            }
-        }
 
         if (Threads.stop.load(std::memory_order_relaxed))
             return VALUE_ZERO;
@@ -1793,7 +1528,6 @@ moves_loop:
                 if (value >= beta)
                 {
                     ss->cutoffCnt += 1 + !ttMove;
-                    ss->refute = move;
                     PROF_COUNT(FH_TOTAL, 1);
                     PROF_COUNT(FH_FIRST, moveCount == 1);
                     PROF_COUNT(FH_SUMIDX, moveCount);
@@ -1804,14 +1538,6 @@ moves_loop:
                     break;
                 }
 
-                // AlphaDepthRed : une fois alpha ameliore, les coups suivants
-                // ont moins de chances de battre le nouveau score ; on les
-                // cherche un pli moins profond (Stockfish, Berserk, Caissa).
-                if (AlphaDepthRed && depth > 2 && depth < 12
-                    && std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY)
-                    depth -= 1;
-
-                alphaRaises++;
                 alpha = value;
             }
         }
@@ -1834,9 +1560,7 @@ moves_loop:
 
     else if (bestMove)
         update_all_stats(pos, ss, thisThread, bestMove, prevSq, quietsSearched, quietCount,
-                         capturesSearched, captureCount,
-                         // HistBoost : coupure nette, bonus d'un pli de plus
-                         depth + (HistBoost && bestValue > beta + HistBoost), ttMove, PvNode);
+                         capturesSearched, captureCount, depth, ttMove, PvNode);
 
     // Aucun coup n'a battu alpha alors que le precedent etait tranquille :
     // ce precedent etait donc bon, on le recompense.
@@ -1846,16 +1570,10 @@ moves_loop:
                                       stat_bonus(depth) * (1 + (bestValue > beta)));
     }
 
-    // FailHighSoft : un score de coupure peu profond est ramene vers beta, il
-    // surestime souvent (Stockfish, Caissa).
-    if (FailHighSoft && bestValue >= beta && std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY
-        && std::abs(alpha) < VALUE_TB_WIN_IN_MAX_PLY)
-        bestValue = Value((int(bestValue) * depth + int(beta)) / (depth + 1));
-
     if (PvNode)
         bestValue = std::min(bestValue, maxValue);
 
-    if (!excludedMove && !(rootNode && thisThread->rootMoves.size() > 1 && !RootTtSave))
+    if (!excludedMove && !(rootNode && thisThread->rootMoves.size() > 1))
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
                   bestValue >= beta          ? BOUND_LOWER
                   : PvNode && bestMove       ? BOUND_EXACT

@@ -81,13 +81,6 @@ MovePicker::MovePicker(const Position&              p,
     refutations[1] = killers[1];
     refutations[2] = (cm != killers[0] && cm != killers[1]) ? cm : Move::none();
 
-    // Simplification a tester (Stockfish les a retires) : sans killers, sans
-    // contre-coup. Les coups restent tries par leurs historiques.
-    if (Tune::NoKillers)
-        refutations[0] = refutations[1] = Move::none();
-    if (Tune::NoCounter)
-        refutations[2] = Move::none();
-
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
     else
@@ -187,19 +180,10 @@ void MovePicker::score() {
                 v += (*continuationHistory[5])[pc][to];
             v += (*pawnHistory)[pawn_structure_index(pos.pawn_key())][pc][to];
 
-            // Pres de la racine, ce qui a coupe dans CE noeud aux iterations
-            // precedentes pese plus qu'une moyenne sur tout l'arbre ; le poids
-            // decroit avec la profondeur. Inerte tant que LowPlyHist vaut 0.
-            if (Tune::LowPlyHist && ply < LOW_PLY_HISTORY_SIZE)
-                v += Tune::LowPlyHist * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
-
             // Un coup qui donne echec merite d'etre vu tot -- sauf s'il perd
             // la piece a l'echange : un echec qui laisse prendre la piece est
-            // rarement le coup qui coupe. Stockfish exige see_ge(m, -75) a son
-            // echelle. Inerte tant que CheckSeeMargin vaut 0 : le bonus va
-            // alors a tous les echecs, comme avant.
-            if ((pos.check_squares(type_of(pc)) & to)
-                && (!Tune::CheckSeeMargin || pos.see_ge(m, -Tune::CheckSeeMargin)))
+            // rarement le coup qui coupe (essai d'un filtre SEE : rejete).
+            if (pos.check_squares(type_of(pc)) & to)
                 v += 16384;
 
             // Mettre une piece a l'abri d'une menace par moindre qu'elle est
