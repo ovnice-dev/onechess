@@ -25,7 +25,7 @@ if not _d or not _d[-1].startswith('tpu'):
     sys.exit('PAS DE TPU : arret')
 
 tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(
-    'https://codeload.github.com/ovnice-dev/onechess/tar.gz/main').read())).extractall('/tmp/code')
+    'https://codeload.github.com/ovnice-dev/onechess-tools/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = glob.glob('/tmp/code/*/tools')[0]
 for mod, pip in (('optax', ['optax']), ('torch', ['torch', '--index-url', 'https://download.pytorch.org/whl/cpu'])):
     try:

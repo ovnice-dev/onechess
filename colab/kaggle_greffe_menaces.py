@@ -11,7 +11,7 @@ def lancer(cmd):
             print(l, end='', flush=True); j.write(l)
     return p.wait()
 tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(
-    'https://codeload.github.com/ovnice-dev/onechess/tar.gz/main').read())).extractall('/tmp/code')
+    'https://codeload.github.com/ovnice-dev/onechess-tools/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = glob.glob('/tmp/code/*/tools')[0]
 ck = glob.glob('/kaggle/input/**/final_tpu.ckpt', recursive=True)
 if not ck:

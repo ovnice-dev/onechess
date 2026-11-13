@@ -2,40 +2,54 @@
 
 *[Version française](README.fr.md)*
 
-UCI chess engine written in C++, with an NNUE neural-network evaluation.
+Onechess is a free UCI chess engine written in C++, with an NNUE evaluation
+trained from scratch by its author. It plays standard chess and Chess960, and
+can be used in any UCI interface (En Croissant, Cute Chess, Arena, Banksia…).
 
-**Author and creator: ovnice** (GitHub: [ovnice-dev](https://github.com/ovnice-dev)).
-Onechess has been designed and developed by ovnice since 2026; the history of
-this repository and of the private archive repository keep a dated record of it.
+**Author: ovnice** ([ovnice-dev](https://github.com/ovnice-dev)), since 2026.
+
+## Download
+
+Get the latest version from the [Releases](https://github.com/ovnice-dev/onechess/releases)
+page. Each release contains the executables and the network `onechess.nnue`:
+put the executable and the network **in the same folder**.
+
+| Executable | Processors |
+|---|---|
+| `onechess-1.0-bmi2.exe` | Intel since Haswell (2013), AMD Zen 3 and later (**the fastest**) |
+| `onechess-1.0-avx2.exe` | AMD Zen 1 and Zen 2 |
+| `onechess-1.0-sse41.exe` | older processors without AVX2 (slow) |
+
+All executables play exactly the same moves (same `bench` signature); only the
+speed differs. If unsure, try `bmi2` first: if it does not start, use `avx2`.
+
+## Strength
+
+Onechess plays on Lichess as [OnechessBot](https://lichess.org/@/OnechessBot).
+Our own estimate for version 1.0, from a 1,500-game gauntlet against five engines
+rated around 3600 (10+0.1, one core each): **about 3577 on the CCRL 40/15
+single-core scale** (November 2026). Official rating lists results will be
+added here once published.
 
 ## Features
 
-- alpha-beta search (PVS) with transposition table, LMR, null move,
-  continuation and threat histories, evaluation corrections;
-- NNUE network 768 → 512×2 → 4 outputs (4 experts selected by material),
-  trained on labelled Lichess Elite games and Stockfish 19 self-play;
-- Syzygy endgame tablebases (through Fathom);
-- node-effort based time management;
-- UCI: ponder, Chess960, `go mate`, MultiPV, WDL output, Syzygy;
-- every change is validated by a pentanomial SPRT (UHO openings).
+**Search**: principal variation search with aspiration windows, iterative
+deepening and a shared transposition table; null move, reverse futility,
+razoring, ProbCut, late move reductions and pruning, singular, negative and
+check extensions; butterfly, capture, continuation, pawn and threat-aware
+histories; evaluation correction histories (pawn, non-pawn, minor, major,
+continuation); Lazy SMP for several threads.
 
-## Play against Onechess
+**Evaluation**: an NNUE network with 768 piece-square inputs × 4 experts chosen by material,
+a 1024-neuron feature transformer per side, 4 output buckets. Trained by its
+author on 1.77 billion positions of public Stockfish self-play data
+(`official-stockfish/master-binpacks`, ODbL), with an in-house trainer
+(PyTorch on GPU, JAX on TPU).
 
-Onechess plays on Lichess as [OnechessBot](https://lichess.org/@/OnechessBot).
+**Endgames**: Syzygy tablebases (through Fathom), at the root and in search.
 
-## Build
-
-```bash
-cd engine
-bash build.sh
-```
-
-## Usage
-
-Put `onechess.exe` and `onechess.nnue` in the same folder, then add
-`onechess.exe` as a UCI engine in your GUI (En Croissant, Arena, Cute Chess…).
-The network is looked up next to the executable; without it, the engine falls
-back to a simple evaluation and is much weaker.
+**Time management**: node-effort based, for increment, sudden death and
+moves-to-go controls; ponder.
 
 ## UCI options
 
@@ -50,40 +64,35 @@ back to a simple evaluation and is much weaker.
 | `UCI_ShowWDL` | win / draw / loss probabilities in each `info` line |
 | `Debug Log File` | copy of the whole UCI dialogue into a file |
 
-The internal search constants can still be set with `setoption` (for testing
-and tuning), but they are not listed by `uci`.
+Other UCI commands: `bench` (signature and speed), `eval`, `d`, `perft`.
 
-## Which binary to choose
+## Build from source
 
-| Binary | Processors |
-|---|---|
-| `onechess-bmi2.exe` | Intel since Haswell (2013), AMD Zen 3 and later |
-| `onechess-avx2.exe` | AMD Zen 1 and Zen 2 |
-| `onechess-sse41.exe` | processors without AVX2 (slow) |
+```bash
+cd engine
+./build.sh pgo        # profile-guided build, the fastest
+```
 
-All three play exactly the same game (identical `bench 12`); only the speed
-differs. They are built with `bash tools/diffusion.sh`.
+Requires a C++20 compiler (GCC or Clang). Check the build with
+`bench 12`: the node count must match the signature given in the release notes.
 
-## Training data
+## How it is developed
 
-- Games from the Lichess Elite database, positions labelled by Stockfish.
-- Stockfish 19 self-play generated for this project.
-- Public Stockfish self-play at 5,000 nodes (`official-stockfish/master-binpacks`
-  on Hugging Face, ODbL license), for the upcoming networks.
-- Binpack reading: code from `nnue-pytorch` (GPLv3), in `tools/binpack/lib/`.
+Every change is measured before it is kept: time-control SPRT matches
+(pentanomial, UHO openings) on many machines, NNUE training on Kaggle GPUs and
+TPUs. The testing and training tools live in a separate repository:
+[onechess-tools](https://github.com/ovnice-dev/onechess-tools).
 
 ## License
 
 Copyright (C) 2026 ovnice.
 
-Onechess is free software distributed under the **GNU General Public License
+Onechess is free software released under the **GNU General Public License
 version 3** (see [LICENSE](LICENSE)). You may use, modify and redistribute it,
-**provided that** you keep this copyright notice and the author's credit,
-provide the source code of any distributed version, and release it under the
-same license.
+provided that you keep this copyright notice and the author's credit, provide
+the source code of any distributed version, and release it under the same
+license. Any derived version must clearly state that it is derived from
+Onechess, created by ovnice.
 
-Any derived version must clearly state that it is derived from Onechess,
-created by ovnice.
-
-Third-party components: Fathom (`engine/fathom/`), MIT license, see
-`engine/fathom/LICENSE`.
+Third-party code: Fathom (`engine/fathom/`, MIT license). Ideas from many open
+engines, Stockfish first, are credited in the source comments.

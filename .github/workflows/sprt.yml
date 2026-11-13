@@ -37,6 +37,18 @@ jobs:
     timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ovnice-dev/onechess-tools
+          path: outils
+      - name: outils (depot onechess-tools)
+        run: |
+          # Les outils vivent dans onechess-tools (13-11) ; on les pose a cote du moteur
+          # sans rien ecraser (tant que le depot moteur les contient encore, rien ne change).
+          for d in ci tools data reseau colab lichess; do
+            if [ -d "outils/$d" ]; then cp -rn "outils/$d" . ; fi
+          done
+          rm -rf outils
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

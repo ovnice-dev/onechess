@@ -37,7 +37,7 @@ class _Tee:
     def write(self, x): [f.write(x) for f in self.f]
     def flush(self): [f.flush() for f in self.f]
 _sys.stdout = _sys.stderr = _Tee(_sys.__stdout__, _j)
-_t.open(fileobj=_io.BytesIO(_u.urlopen('https://codeload.github.com/ovnice-dev/onechess/tar.gz/main').read())).extractall('/tmp/code')
+_t.open(fileobj=_io.BytesIO(_u.urlopen('https://codeload.github.com/ovnice-dev/onechess-tools/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = _g.glob('/tmp/code/*/tools')[0]
 for s in SOURCES:
     _sp.run([_sys.executable, '-u', TOOLS + '/hf_sources.py', '--url', s['url'], '--prefixe', s['prefixe'],
