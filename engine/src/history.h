@@ -98,7 +98,10 @@ using ContinuationHistory = Stats<PieceToHistory, NOT_USED, PIECE_NB, SQUARE_NB>
 using CounterMoveHistory = Stats<Move, NOT_USED, PIECE_NB, SQUARE_NB>;
 
 // [structure de pions][piece][case] : ce qui marche dans ce type de position.
-constexpr int PAWN_HISTORY_SIZE = 512;
+#ifndef ONE_PAWN_HIST
+#define ONE_PAWN_HIST 512
+#endif
+constexpr int PAWN_HISTORY_SIZE = ONE_PAWN_HIST;   // -DONE_PAWN_HIST : essai de tailles (phase 10, multi-fils)
 using PawnHistory = Stats<std::int16_t, 8192, PAWN_HISTORY_SIZE, PIECE_NB, SQUARE_NB>;
 
 inline int pawn_structure_index(Key pawnKey) {
@@ -107,7 +110,10 @@ inline int pawn_structure_index(Key pawnKey) {
 
 // [trait][structure de pions] : ecart appris entre evaluation statique et
 // score reellement trouve par la recherche.
-constexpr int CORRECTION_HISTORY_SIZE  = 16384;
+#ifndef ONE_CORR_HIST
+#define ONE_CORR_HIST 16384
+#endif
+constexpr int CORRECTION_HISTORY_SIZE  = ONE_CORR_HIST;
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
 using CorrectionHistory =
   Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB, CORRECTION_HISTORY_SIZE>;
