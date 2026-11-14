@@ -11,6 +11,7 @@ faudrait des heures de match pour s'en apercevoir.
 """
 
 import argparse
+import os
 import struct
 import subprocess
 import sys
@@ -27,7 +28,7 @@ HIDDEN_FLAG   = 1024         # couches cachees l1/l2 (voir train.py, export)
 PAIRMUL_FLAG  = 2048         # produit par paires avant l1, poids l1 en int8
 FULLTHREAT_FLAG = 4096       # menaces completes (phase 10), table int8 apres les biais
 QH            = 127
-QA, QB, SCALE = 255, 64, 400
+QA, QB, SCALE = int(os.environ.get('ONE_QA', 255)), 64, 400
 MAGIC3 = 0x334E4E4F     # sans champ activation : CReLU
 MAGIC4 = 0x344E4E4F     # avec champ activation
 

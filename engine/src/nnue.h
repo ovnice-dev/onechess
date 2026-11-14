@@ -31,7 +31,10 @@ namespace NNUE {
 // incrementale bascule alors sur un recalcul, pour cette perspective seule.
 // ---------------------------------------------------------------------------
 
-constexpr int QA    = 255;   // echelle des poids d'entree
+#ifndef ONE_QA
+#define ONE_QA 255
+#endif
+constexpr int QA    = ONE_QA;   // echelle des poids d'entree (127 avec -DONE_FT_INT8 et un reseau QAT, phase 10)
 constexpr int QB    = 64;    // echelle des poids de sortie
 constexpr int SCALE = 400;   // conversion sortie -> centipions
 

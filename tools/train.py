@@ -50,7 +50,7 @@ HIDDEN_FLAG = 1024    # bit : couches cachees l1/l2 a la place de la sortie simp
 PAIRMUL_FLAG = 2048   # bit : produit par paires (Stockfish) avant la couche l1, poids l1 en int8
 QH          = 127     # echelle des activations des couches cachees (int, 0..QH)
 MAX_PIECES  = 32
-QA, QB      = 255, 64
+QA, QB      = int(os.environ.get('ONE_QA', 255)), 64   # ONE_QA=127 : 1re couche int8 (QAT, phase 10)
 SCALE       = 400
 MAGIC       = 0x344E4E4F        # "ONN4" : en-tete avec activation
 ACTIVATIONS = {"crelu": 0, "screlu": 1}

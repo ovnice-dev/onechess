@@ -26,7 +26,9 @@ import jax.numpy as jnp
 import optax
 
 ICI = os.path.dirname(os.path.abspath(__file__))
-BASE, QA, SCALE = 768, 255, 400
+BASE, SCALE = 768, 400
+QA = int(os.environ.get('ONE_QA', 255))   # ONE_QA=127 avec --ft-int8 1 : 1re couche int8 dans le moteur
+QAT = False   # --ft-int8 1 : poids fusionnes bornes a 127/QA et arrondis a l'aller (entrainement conscient de la quantification)
 CLIP = 1.98
 
 
@@ -145,7 +147,22 @@ def entrees_denses(r, nb, ob_n, lam):
     return fw, fb, xw, xb, stm, ob, sc, tg
 
 
+def quantifier(p, nb):
+    """QAT : a l'aller, poids fusionnes (bucket + tronc) et biais arrondis comme dans le moteur
+    (round(w * QA) / QA) ; au retour, gradient inchange (estimateur droit)."""
+    n, h = nb * BASE, p["ft_bias"].shape[0]
+    m = p["ft"][:n].reshape(nb, BASE, h) + p["ft_v"][:BASE][None]
+    dm = jax.lax.stop_gradient(jnp.round(m * QA) / QA - m).reshape(n, h)
+    q = dict(p)
+    q["ft"] = p["ft"].at[:n].add(dm)
+    b = p["ft_bias"]
+    q["ft_bias"] = b + jax.lax.stop_gradient(jnp.round(b * QA) / QA - b)
+    return q
+
+
 def predire(p, r, nb, ob_n, lam):
+    if QAT:
+        p = quantifier(p, nb)
     if MENACES:
         r, iw, ib = r
         tw, tb = p["th"][iw].sum(1), p["th"][ib].sum(1)
@@ -206,6 +223,11 @@ def borner(p, nb):
     p["out_w"] = jnp.clip(p["out_w"], -CLIP, CLIP)
     if "th" in p:
         p["th"] = jnp.clip(p["th"], -CLIP_TH, CLIP_TH).at[DIM_MEN].set(0.0)
+    if QAT:   # poids FUSIONNES bornes a 127/QA (int8 dans le moteur), ecart reporte sur la part du bucket
+        n, h, c = nb * BASE, p["ft_bias"].shape[0], 127 / QA
+        v = p["ft_v"][:BASE][None]
+        m = jnp.clip(p["ft"][:n].reshape(nb, BASE, h) + v, -c, c) - v
+        p["ft"] = p["ft"].at[:n].set(m.reshape(n, h))
     return p
 
 
@@ -402,8 +424,13 @@ def main():
     ap.add_argument("--menaces", type=int, default=0, help="1 = entrees menaces completes (phase 10, C)")
     ap.add_argument("--menaces-largeur", type=int, default=0, help="neurones alimentes par les menaces (0 = tous)")
     ap.add_argument("--menaces-ennemis", type=int, default=0, help="1 = sans les defenses")
+    ap.add_argument("--ft-int8", type=int, default=0,
+                    help="1 = QAT : 1re couche int8 dans le moteur (lancer avec ONE_QA=127, moteur -DONE_QA=127 -DONE_FT_INT8)")
     a = ap.parse_args()
-    global DENSE, MENACES, LARG_MEN, ENNEMIS
+    global DENSE, MENACES, LARG_MEN, ENNEMIS, QAT
+    QAT = bool(a.ft_int8)
+    if QAT:
+        print(f"QAT : 1re couche int8, QA = {QA}, poids fusionnes bornes a {127 / QA:.3f}", flush=True)
     LARG_MEN, ENNEMIS = a.menaces_largeur, bool(a.menaces_ennemis)
     DENSE = bool(a.ft_dense)
     MENACES = bool(a.menaces)
