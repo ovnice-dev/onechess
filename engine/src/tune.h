@@ -81,7 +81,7 @@
     X(RfpCorr,                        0,     0,   256) \
     X(InsufMat,                       0,     0,     1) \
     X(K1Ext,                          1,     0,     3) \
-    X(QsFin,                          0,     0,     3) \
+    X(QsFin,                          3,     0,     3) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
