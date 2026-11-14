@@ -245,13 +245,21 @@ void update_all_stats(const Position& pos,
                       Move*           capturesSearched,
                       int             captureCount,
                       Depth           depth,
-                      Move            /*ttMove*/,
+                      Move            ttMove,
                       bool            /*pvNode*/) {
     PROF_SCOPE(HISTUPD);
 
     const Piece     moved        = pos.moved_piece(bestMove);
     const PieceType capturedType = type_of(pos.piece_on(bestMove.to_sq()));
     int             bonus        = stat_bonus(depth);
+
+    // Phase 10, d'apres Stockfish (non testes chez nous avant le 14-11) :
+    // BonusTtMove : bonus en plus quand le meilleur coup est celui de la table ;
+    // BonusCount  : bonus qui grandit avec le nombre de coups essayes avant la coupure.
+    if (bestMove == ttMove)
+        bonus += BonusTtMove;
+    if (BonusCount)
+        bonus += int(std::int64_t(bonus) * (quietCount + captureCount) * BonusCount / 65536);
 
     const int       malus        = stat_malus(depth);
 
