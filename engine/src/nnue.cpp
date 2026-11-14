@@ -937,12 +937,6 @@ thread_local FinnyEntry Finny[COLOR_NB][64][2];
 }  // namespace
 
 void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
-    if (Net->pairs)
-    {
-        refresh_side(acc, pos, p);
-        return;
-    }
-
     const PerspInfo pi = persp_info_pos(p, pos, pos.square<KING>(p));
     FinnyEntry&     e  = Finny[p][pi.bucket][pi.flip != 0];
 
@@ -959,6 +953,30 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
     const FtW* subs[32];
     const FtW* adds[32];
     int        ns = 0, na = 0;
+
+    // Paires de pions (14-11) : elles ne dependent que des pions, pas de
+    // l'expert ; on les corrige par difference avec les pions de l'entree,
+    // comme les pieces (avant, recalcul complet a chaque changement d'expert :
+    // -35 % de vitesse).
+    const std::int16_t* pSubW[160];
+    const std::int16_t* pAddW[160];
+    int                 nps = 0, npa = 0;
+    if (Net->pairs)
+    {
+        const Bitboard ow = e.bb[WHITE][PAWN], ob = e.bb[BLACK][PAWN];
+        const Bitboard nw = pos.pieces(WHITE, PAWN), nb = pos.pieces(BLACK, PAWN);
+        if (ow != nw || ob != nb)
+        {
+            int idx[160];
+            npa = collect_pairs(p, nw & ~ow, nb & ~ob, nw, nb, idx);
+            for (int k = 0; k < npa; ++k)
+                pAddW[k] = pair_weights(idx[k]);
+            nps = collect_pairs(p, ow & ~nw, ob & ~nb, ow, ob, idx);
+            for (int k = 0; k < nps; ++k)
+                pSubW[k] = pair_weights(idx[k]);
+        }
+    }
+
     for (Color c : {WHITE, BLACK})
         for (PieceType pt = PAWN; pt <= KING; ++pt)
         {
@@ -984,6 +1002,12 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
         for (int k = 0; k < na; ++k)
             for (int t = 0; t < TILE; ++t)
                 v[t] = _mm256_add_epi16(v[t], FT_LOAD(adds[k] + j + 16 * t));
+        for (int k = 0; k < nps; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = _mm256_sub_epi16(v[t], _mm256_load_si256(reinterpret_cast<const __m256i*>(pSubW[k] + j + 16 * t)));
+        for (int k = 0; k < npa; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = _mm256_add_epi16(v[t], _mm256_load_si256(reinterpret_cast<const __m256i*>(pAddW[k] + j + 16 * t)));
         for (int t = 0; t < TILE; ++t)
         {
             _mm256_store_si256(reinterpret_cast<__m256i*>(e.acc + j + 16 * t), v[t]);
@@ -1003,6 +1027,12 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
         for (int k = 0; k < na; ++k)
             for (int t = 0; t < TILE; ++t)
                 v[t] = vaddq_s16(v[t], FT_LOADN(adds[k] + j + 8 * t));
+        for (int k = 0; k < nps; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = vsubq_s16(v[t], vld1q_s16(pSubW[k] + j + 8 * t));
+        for (int k = 0; k < npa; ++k)
+            for (int t = 0; t < TILE; ++t)
+                v[t] = vaddq_s16(v[t], vld1q_s16(pAddW[k] + j + 8 * t));
         for (int t = 0; t < TILE; ++t)
         {
             vst1q_s16(e.acc + j + 8 * t, v[t]);
@@ -1014,6 +1044,12 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
         sub_feature(e.acc, subs[k]);
     for (int k = 0; k < na; ++k)
         add_feature(e.acc, adds[k]);
+    for (int k = 0; k < nps; ++k)
+        for (int j = 0; j < HIDDEN_SIZE; ++j)
+            e.acc[j] = std::int16_t(e.acc[j] - pSubW[k][j]);
+    for (int k = 0; k < npa; ++k)
+        for (int j = 0; j < HIDDEN_SIZE; ++j)
+            e.acc[j] = std::int16_t(e.acc[j] + pAddW[k][j]);
     std::memcpy(acc.v[p], e.acc, sizeof(e.acc));
 #endif
 }

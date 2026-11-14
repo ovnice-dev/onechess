@@ -61,3 +61,5 @@ PcAdaptT|PcAdapt=100|0 3|10|150|20||tc:10+0.1
 FutCorrT|FutCorr=32|0 3|10|150|20||tc:10+0.1
 FirstLmrT|FirstLmr=4|0 3|10|150|20||tc:10+0.1
 Spsa8bT|AspirationDelta=9 AspirationMinDepth=4 RfpMaxDepth=8 RazorMaxDepth=3 RazorMargin=292 NmpMinDepth=3 NmpBaseReduction=4 NmpDepthDiv=3 NmpEvalDiv=220 NmpMaxEvalR=3 ProbcutMinDepth=5 ProbcutMargin=175 IirMinDepth=4 LmpBase=3 LmpDepthFactor=1 FutilityMaxDepth=7 FutilityMargin=96 HistPruneMaxDepth=5 HistPruneMargin=3302 SeeCaptureMargin=130 SeeQuietMargin=15 LmrBase=55 LmrDivisor=264 LmrHistDiv=13091 SingularMinDepth=6 SingularBetaFactor=24 SingularExtraMargin=16 StatBonusMul=248 StatBonusSub=83 StatBonusMax=1808 StatMalusMul=509 StatMalusSub=108 StatMalusMax=1908 QsDeltaMargin=140 QsFutilityMargin=108 CorrHistDiv=10803 CorrHistWeight=1 CorrNpWeight=1 CorrContWeight=1 CorrMinorWeight=1 CorrMajorWeight=1 BadQuiets=13845 ThreatOrder=48 MalusDecay=942 LmrDeeperMargin=53 LmrShallowerMargin=8|0 3|10|150|20||tc:10+0.1
+RfpInsF|RfpCorr=32 InsufMat=1|0 3|10|150|20||tc:10+0.1
+QsFinF|QsFin=3|0 3|10|150|20||tc:10+0.1
