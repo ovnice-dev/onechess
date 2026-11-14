@@ -33,7 +33,7 @@ if not _d or not _d[-1].startswith('tpu'):
 tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(
     'https://codeload.github.com/ovnice-dev/onechess-tools/tar.gz/main').read())).extractall('/tmp/code')
 TOOLS = glob.glob('/tmp/code/*/tools')[0]
-for mod, pip in (('optax', ['optax']), ('torch', ['torch', '--index-url', 'https://download.pytorch.org/whl/cpu'])):
+for mod, pip in (('optax', ['optax']), ('chess', ['chess']), ('torch', ['torch', '--index-url', 'https://download.pytorch.org/whl/cpu'])):
     try:
         __import__(mod)
     except ImportError:
