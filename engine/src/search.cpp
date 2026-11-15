@@ -574,7 +574,11 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
             meilleure = vTable;
         if (meilleure >= beta)
         {
-            if (!trouve)
+            // QsStandTt (en test, Stockfish 2026) : ne garder que l'evaluation,
+            // pas de borne tiree du stand pat
+            if (!trouve && QsStandTt)
+                fiche->save(cle, VALUE_NONE, false, BOUND_NONE, DEPTH_NONE, Move::none(), brute, TT.generation());
+            else if (!trouve)
                 fiche->save(cle, vers_table(meilleure, ss->ply), false, BOUND_LOWER, DEPTH_ENTRY_TT + 1, Move::none(),
                             brute, TT.generation());
             return meilleure;
@@ -815,7 +819,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
         // Coup nul : meme en passant son tour, on reste au-dessus de beta
         if (!estPv && (ss - 1)->coup != Move::null() && !exclu && d >= NmpMinDepth && eval >= beta
-            && ss->evalStatique >= beta && pos.non_pawn_material(moi) && ss->ply >= f->nmpMinPly
+            && ss->evalStatique >= beta - NmpImp * progresse && pos.non_pawn_material(moi) && ss->ply >= f->nmpMinPly
             && beta > VALUE_TB_LOSS_IN_MAX_PLY)
         {
             const Depth r = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR) + d / NmpDepthDiv

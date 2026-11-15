@@ -75,6 +75,8 @@
     X(BonusCount,                     0,     0,  1024) \
     X(HistRootPct,                  100,    50,   100) \
     X(BonusStatDiv,                   0,     0,   256) \
+    X(NmpImp,                         0,     0,   200) \
+    X(QsStandTt,                      0,     0,     1) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
