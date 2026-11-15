@@ -73,6 +73,8 @@
     X(K1Ext,                          1,     0,     3) \
     X(QsFin,                          3,     0,     3) \
     X(BonusCount,                     0,     0,  1024) \
+    X(HistRootPct,                  100,    50,   100) \
+    X(BonusStatDiv,                   0,     0,   256) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \

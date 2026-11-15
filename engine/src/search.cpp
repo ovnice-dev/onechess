@@ -229,6 +229,8 @@ void apprendre_coupure(const Position& pos, Stack* ss, Thread* f, Move meilleur,
     int bonus = bonus_stat(d);
     if (BonusCount)  // option en test (BonusCntF)
         bonus += int(std::int64_t(bonus) * (nbTranq + nbPrises) * BonusCount / 65536);
+    if (BonusStatDiv)  // option en test : la note du coup precedent (Stockfish, 12-2025)
+        bonus += (ss - 1)->noteStat / BonusStatDiv;
     const int malus = malus_stat(d);
 
     if (pos.capture_stage(meilleur))
@@ -316,6 +318,10 @@ void Thread::iterative_deepening() {
     ss->pv = pv;
 
     lowPlyHistory.fill(0);  // il ne vaut que pour cette racine
+    if (HistRootPct < 100)  // option en test : l'historique principal s'estompe a chaque nouvelle racine
+        for (auto& camp : mainHistory)
+            for (auto& n : camp)
+                n = std::int16_t(int(n) * HistRootPct / 100);
     rootPos.set_thread(this);
     const bool surprise = is_main() && DemiCoupAttendu == rootPos.game_ply() && rootPos.key() != CleAttendue;
 
