@@ -233,8 +233,11 @@ void apprendre_coupure(const Position& pos, Stack* ss, Thread* f, Move meilleur,
         bonus += (ss - 1)->noteStat / BonusStatDiv;
     const int malus = malus_stat(d);
 
+    // CapBonusPct / CapMalusPct (en test) : les prises recoivent leur propre
+    // dose de recompense et de malus, separee de celle des tranquilles
+    const int bonusPrise = bonus * CapBonusPct / 100, malusPrise = malus * CapMalusPct / 100;
     if (pos.capture_stage(meilleur))
-        f->captureHistory[pos.moved_piece(meilleur)][meilleur.to_sq()][type_of(pos.piece_on(meilleur.to_sq()))] << bonus;
+        f->captureHistory[pos.moved_piece(meilleur)][meilleur.to_sq()][type_of(pos.piece_on(meilleur.to_sq()))] << bonusPrise;
     else
     {
         recompenser_tranquille(pos, ss, f, meilleur, bonus, ss->menaces);
@@ -258,7 +261,7 @@ void apprendre_coupure(const Position& pos, Stack* ss, Thread* f, Move meilleur,
     for (int i = 0; i < nbPrises; ++i)
     {
         const Move c = prises[i];
-        f->captureHistory[pos.moved_piece(c)][c.to_sq()][type_of(pos.piece_on(c.to_sq()))] << -malus;
+        f->captureHistory[pos.moved_piece(c)][c.to_sq()][type_of(pos.piece_on(c.to_sq()))] << -malusPrise;
     }
 }
 
