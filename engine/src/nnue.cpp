@@ -1185,18 +1185,34 @@ inline int ft_off(int pt, int fr, int to) {
 void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, int& nb) {
     nw = nb = 0;
     const Bitboard occ = pos.pieces();
-    for (Bitboard o = occ & ~pos.pieces(KING); o;)
+    // Cibles utiles par (camp de l'attaquant, type d'attaquant) : les types que
+    // l'indexeur garde (pion -> cavalier, tour ; fou, tour -> tout sauf dame et
+    // roi ; cavalier, dame -> tout sauf roi), et seulement le camp adverse sans
+    // les defenses. Un attaquant sans cible utile n'est meme pas regarde : les
+    // pions, la moitie des pieces, sont tries d'un coup par decalage.
+    Bitboard cibles[COLOR_NB][PIECE_TYPE_NB];
+    for (Color c : {WHITE, BLACK})
+    {
+        const Bitboard vises = Net->ftEnemies ? pos.pieces(~c) : occ;
+        const Bitboard sansRoi = vises & ~pos.pieces(KING);
+        cibles[c][PAWN]   = vises & pos.pieces(KNIGHT, ROOK);
+        cibles[c][KNIGHT] = cibles[c][QUEEN] = sansRoi;
+        cibles[c][BISHOP] = cibles[c][ROOK] = sansRoi & ~pos.pieces(QUEEN);
+    }
+    Bitboard attaquants = occ & ~pos.pieces(PAWN, KING);
+    // un pion blanc attaque une case si un pion noir pose sur cette case l'attaquerait en retour
+    attaquants |= pos.pieces(WHITE, PAWN) & pawn_attacks_bb<BLACK>(cibles[WHITE][PAWN]);
+    attaquants |= pos.pieces(BLACK, PAWN) & pawn_attacks_bb<WHITE>(cibles[BLACK][PAWN]);
+    for (Bitboard o = attaquants; o;)
     {
         const Square   fr  = pop_lsb(o);
         const Piece    pc  = pos.piece_on(fr);
         const int      a   = ft_code(pc), ta = a % 6;
-        const Bitboard att =
-          (ta == 0 ? pawn_attacks_bb(color_of(pc), fr) : attacks_bb(type_of(pc), fr, occ)) & occ;
+        const Bitboard att = (ta == 0 ? pawn_attacks_bb(color_of(pc), fr) : attacks_bb(type_of(pc), fr, occ))
+                           & cibles[color_of(pc)][type_of(pc)];
         for (Bitboard t = att; t;)
         {
             const Square        to = pop_lsb(t);
-            if (Net->ftEnemies && color_of(pos.piece_on(to)) == color_of(pc))
-                continue;   // defense ecartee
             const int           d  = ft_code(pos.piece_on(to));
             const int           f = int(fr), tt = int(to), fb = f ^ 56, tb = tt ^ 56;
             const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + ft_off(ta, f, tt);
@@ -1517,7 +1533,16 @@ const ThreatAcc& threat_acc(const Position& pos) {
     {
         std::uint16_t lw[FT_MAXK], lb[FT_MAXK];
         int           nw, nbk;
+#ifdef FT_TIME
+        static std::uint64_t cyL = 0, cyA = 0, nE = 0, nT = 0;
+        static struct Aff { ~Aff() { std::fprintf(stderr, "FT_TIME evals %llu listes %.0f application %.0f menaces/camp %.1f\n", (unsigned long long) nE, double(cyL) / nE, double(cyA) / nE, double(nT) / (2.0 * nE)); } } aff;
+        const std::uint64_t t0 = __rdtsc();
         ft_lists(pos, lw, nw, lb, nbk);
+        const std::uint64_t t1 = __rdtsc();
+        cyL += t1 - t0; ++nE; nT += nw + nbk;
+#else
+        ft_lists(pos, lw, nw, lb, nbk);
+#endif
         int aw[FT_MAXK], ab[FT_MAXK];
         for (int k = 0; k < nw; ++k)
             aw[k] = lw[k];
@@ -1525,6 +1550,9 @@ const ThreatAcc& threat_acc(const Position& pos) {
             ab[k] = lb[k];
         ft_apply(FtZero, t.v[WHITE], nullptr, 0, aw, nw);
         ft_apply(FtZero, t.v[BLACK], nullptr, 0, ab, nbk);
+#ifdef FT_TIME
+        cyA += __rdtsc() - t1;
+#endif
         t.owner    = st;
         st->thrGen = NetGen;
         return t;
@@ -1674,30 +1702,69 @@ const ThreatAcc& threat_acc(const Position& pos) {
     return t;
 }
 
-// Sortie : accumulateur des pieces + accumulateur des menaces, puis la sortie habituelle
-Value output_full(const Accumulator& acc, const Position& pos, int bucket) {
-    const ThreatAcc&       t = threat_acc(pos);
-    alignas(64) Accumulator sum;
-    const int              W = Net->ftWidth;
-    for (Color c : {WHITE, BLACK})
-    {
-        // Neurones hors du bloc des menaces : l'accumulateur des pieces seul
-        if (W < HIDDEN_SIZE)
-            std::memcpy(sum.v[c] + W, acc.v[c] + W, sizeof(std::int16_t) * (HIDDEN_SIZE - W));
+// Produit de sortie d'une moitie quand les W premiers neurones recoivent aussi
+// le bloc des menaces : la somme se fait a la volee, sans recopier
+// l'accumulateur (16-11 : la copie de 4 Ko par evaluation coutait autant que
+// le calcul des menaces lui-meme).
+inline std::int32_t forward_half_bloc(const std::int16_t* acc, const std::int16_t* thr, int W,
+                                      const std::int16_t* w) {
 #if defined(__AVX2__)
-        for (int j = 0; j < W; j += 16)
-            _mm256_store_si256(reinterpret_cast<__m256i*>(sum.v[c] + j),
-                               _mm256_add_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(acc.v[c] + j)),
-                                                _mm256_load_si256(reinterpret_cast<const __m256i*>(t.v[c] + j))));
-#elif defined(ONE_NEON)
-        for (int j = 0; j < W; j += 8)
-            vst1q_s16(sum.v[c] + j, vaddq_s16(vld1q_s16(acc.v[c] + j), vld1q_s16(t.v[c] + j)));
-#else
-        for (int j = 0; j < W; ++j)
-            sum.v[c][j] = std::int16_t(acc.v[c][j] + t.v[c][j]);
-#endif
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i qa   = _mm256_set1_epi16(QA);
+    __m256i       sum  = _mm256_setzero_si256();
+    int           i    = 0;
+    for (; i < W; i += 16)
+    {
+        __m256i a = _mm256_add_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(acc + i)),
+                                     _mm256_load_si256(reinterpret_cast<const __m256i*>(thr + i)));
+        a         = _mm256_min_epi16(_mm256_max_epi16(a, zero), qa);
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + i))));
     }
-    return output(sum, pos.side_to_move(), bucket);
+    for (; i < HIDDEN_SIZE; i += 16)
+    {
+        __m256i a = _mm256_load_si256(reinterpret_cast<const __m256i*>(acc + i));
+        a         = _mm256_min_epi16(_mm256_max_epi16(a, zero), qa);
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + i))));
+    }
+    return hsum(sum);
+#elif defined(ONE_NEON)
+    const int16x8_t zero = vdupq_n_s16(0);
+    const int16x8_t qa   = vdupq_n_s16(QA);
+    int32x4_t       s0 = vdupq_n_s32(0), s1 = vdupq_n_s32(0);
+    for (int i = 0; i < HIDDEN_SIZE; i += 8)
+    {
+        int16x8_t a = vld1q_s16(acc + i);
+        if (i < W)
+            a = vaddq_s16(a, vld1q_s16(thr + i));
+        a                 = vminq_s16(vmaxq_s16(a, zero), qa);
+        const int16x8_t b = vld1q_s16(w + i);
+        s0 = vmlal_s16(s0, vget_low_s16(a), vget_low_s16(b));
+        s1 = vmlal_high_s16(s1, a, b);
+    }
+    return vaddvq_s32(vaddq_s32(s0, s1));
+#else
+    std::int32_t sum = 0;
+    for (int i = 0; i < HIDDEN_SIZE; ++i)
+    {
+        int a = i < W ? std::int16_t(acc[i] + thr[i]) : acc[i];
+        a     = a < 0 ? 0 : (a > QA ? QA : a);
+        sum += a * w[i];
+    }
+    return sum;
+#endif
+}
+
+// Sortie : accumulateur des pieces + bloc des menaces (reseau CReLU sans
+// couches cachees, impose au chargement)
+Value output_full(const Accumulator& acc, const Position& pos, int bucket) {
+    const ThreatAcc&    t   = threat_acc(pos);
+    const int           W   = Net->ftWidth;
+    const Color         stm = pos.side_to_move();
+    const std::int16_t* w   = Net->outputWeights + std::size_t(bucket) * 2 * HIDDEN_SIZE;
+    const std::int64_t  sum = std::int64_t(forward_half_bloc(acc.v[stm], t.v[stm], W, w))
+                           + forward_half_bloc(acc.v[~stm], t.v[~stm], W, w + HIDDEN_SIZE);
+    const int cp = int((sum + Net->outputBias[bucket]) * SCALE / (QA * QB));
+    return Value(std::clamp(cp, -12000, 12000));
 }
 }  // namespace
 
