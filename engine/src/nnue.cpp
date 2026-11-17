@@ -415,6 +415,25 @@ bool requires_refresh(const DirtyPiece& dp, Color p) {
 // identique au bit pres -- l'arithmetique int16 modulo 2^16 est associative --
 // ce que verifient l'assertion de evaluate() en compilation de debogage et le
 // nombre de noeuds a profondeur fixe.
+#if defined(__AVX2__)
+// Mise a jour d'une perspective quand le nombre de lignes retirees et ajoutees
+// est connu a la compilation (coup tranquille 1+1, prise 2+1, roque 2+2,
+// promotion 1+1 ou 2+1) : boucles internes deroulees, rien a recompter a
+// chaque tranche de 16 neurones.
+template<int NS, int NA>
+inline void maj_fixe(const std::int16_t* s, std::int16_t* d, const FtW* const* subs, const FtW* const* adds) {
+    for (int j = 0; j < HIDDEN_SIZE; j += 16)
+    {
+        __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
+        for (int k = 0; k < NS; ++k)
+            v = _mm256_sub_epi16(v, FT_LOAD(subs[k] + j));
+        for (int k = 0; k < NA; ++k)
+            v = _mm256_add_epi16(v, FT_LOAD(adds[k] + j));
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
+    }
+}
+#endif
+
 void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const PawnSets* ps) {
     PROF_SCOPE(NNUE_APPLY);
 #ifdef OLD_APPLY
@@ -494,6 +513,13 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
         std::int16_t*       d = dst.v[p];
 
 #if defined(__AVX2__)
+        if (nps == 0 && npa == 0)
+        {
+            const int cas = ns * 4 + na;
+            if (cas == 1 * 4 + 1) { maj_fixe<1, 1>(s, d, subs, adds); continue; }
+            if (cas == 2 * 4 + 1) { maj_fixe<2, 1>(s, d, subs, adds); continue; }
+            if (cas == 2 * 4 + 2) { maj_fixe<2, 2>(s, d, subs, adds); continue; }
+        }
         for (int j = 0; j < HIDDEN_SIZE; j += 16)
         {
             __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
