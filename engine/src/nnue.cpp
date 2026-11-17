@@ -432,6 +432,20 @@ inline void maj_fixe(const std::int16_t* s, std::int16_t* d, const FtW* const* s
         _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
     }
 }
+#elif defined(ONE_NEON)
+// Meme specialisation pour ARM (bot sur Oracle) : registres de 8 neurones.
+template<int NS, int NA>
+inline void maj_fixe(const std::int16_t* s, std::int16_t* d, const FtW* const* subs, const FtW* const* adds) {
+    for (int j = 0; j < HIDDEN_SIZE; j += 8)
+    {
+        int16x8_t v = vld1q_s16(s + j);
+        for (int k = 0; k < NS; ++k)
+            v = vsubq_s16(v, FT_LOADN(subs[k] + j));
+        for (int k = 0; k < NA; ++k)
+            v = vaddq_s16(v, FT_LOADN(adds[k] + j));
+        vst1q_s16(d + j, v);
+    }
+}
 #endif
 
 void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const PawnSets* ps) {
@@ -536,6 +550,13 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
         }
 #elif defined(ONE_NEON)
+        if (nps == 0 && npa == 0)
+        {
+            const int cas = ns * 4 + na;
+            if (cas == 1 * 4 + 1) { maj_fixe<1, 1>(s, d, subs, adds); continue; }
+            if (cas == 2 * 4 + 1) { maj_fixe<2, 1>(s, d, subs, adds); continue; }
+            if (cas == 2 * 4 + 2) { maj_fixe<2, 2>(s, d, subs, adds); continue; }
+        }
         for (int j = 0; j < HIDDEN_SIZE; j += 8)
         {
             int16x8_t v = vld1q_s16(s + j);
