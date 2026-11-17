@@ -142,6 +142,13 @@ void report(std::uint64_t nodes) {
                     nott > 0 ? 100.0 * (calls[FH_FIRST] - calls[FH_TT_FIRST]) / nott : 0.0);
         std::printf("  coupures par coup tranquille : %5.1f %%, rang moyen %.2f\n", 100.0 * q / tot,
                     q > 0 ? calls[FH_QUIET_SUMIDX] / q : 0.0);
+        const double nl = calls[FH_NT_LATE];
+        if (nl > 0)
+            std::printf("  sans coup de table, coupures tardives : %.0f (rang moyen %.2f) : prises %.1f %%, "
+                        "meurtriers/reponse %.1f %%, autres tranquilles %.1f %% ; 1er coup = prise dans %.1f %%\n",
+                        nl, calls[FH_NT_LATE_SUMIDX] / nl, 100.0 * calls[FH_NT_LATE_CAP] / nl,
+                        100.0 * calls[FH_NT_LATE_REF] / nl, 100.0 * calls[FH_NT_LATE_QUIET] / nl,
+                        100.0 * calls[FH_NT_LATE_FCAP] / nl);
     }
     std::fflush(stdout);
 }

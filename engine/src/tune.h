@@ -79,8 +79,18 @@
     X(QsStandTt,                      0,     0,     1) \
     X(CapBonusPct,                  100,    50,   200) \
     X(CapMalusPct,                  100,    50,   200) \
+    X(IidMin,                         0,     0,    20) \
+    X(IidRed,                         3,     1,     8) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
+    X(OrdMain,                       16,     0,    48) \
+    X(OrdSuite1,                     16,     0,    48) \
+    X(OrdSuite2,                      8,     0,    32) \
+    X(OrdSuite3,                      8,     0,    32) \
+    X(OrdSuite4,                      8,     0,    32) \
+    X(OrdSuite6,                      8,     0,    32) \
+    X(OrdPions,                       8,     0,    32) \
+    X(OrdEchec,                   16384,     0, 32768) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \

@@ -56,6 +56,12 @@ enum Cat : int {
     FH_TT_FIRST,       //   dont au premier coup (en principe le coup de table)
     FH_QUIET,          // coupures produites par un coup tranquille
     FH_QUIET_SUMIDX,   //   somme de leurs rangs
+    FH_NT_LATE,        // sans coup de table, coupure tardive (rang > 1)
+    FH_NT_LATE_CAP,    //   par une prise
+    FH_NT_LATE_REF,    //   par un coup meurtrier ou la reponse
+    FH_NT_LATE_QUIET,  //   par un autre tranquille
+    FH_NT_LATE_FCAP,   //   alors que le 1er coup essaye etait une prise
+    FH_NT_LATE_SUMIDX, //   somme des rangs
 
     NCAT
 };

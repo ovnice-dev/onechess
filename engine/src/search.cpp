@@ -731,8 +731,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         precharger_corrections(pos, f, ss);
     const bool  trouve  = ss->ttTrouve;
     const Value vTable  = trouve ? depuis_table(fiche->value(), ss->ply, pos.rule50_count()) : VALUE_NONE;
-    const Move  cTable  = racine ? f->rootMoves[f->pvIdx].pv[0] : trouve ? fiche->move() : Move::none();
-    const bool  priseTable = cTable && pos.capture_stage(cTable);
+    Move        cTable  = racine ? f->rootMoves[f->pvIdx].pv[0] : trouve ? fiche->move() : Move::none();
+    bool        priseTable = cTable && pos.capture_stage(cTable);
     if (!exclu)
         ss->ttPv = estPv || (trouve && fiche->is_pv());
 
@@ -897,8 +897,21 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             }
         }
 
-        // Sans coup de table, le tri sera mauvais : un pli de moins
-        if ((estPv || noeudCut) && d >= 6 && !cTable)
+        // Sans coup de table, le tri sera mauvais. IidMin (en test) : une
+        // recherche reduite au meme noeud fournit d'abord un premier coup ;
+        // sinon (par defaut), on se contente d'un pli de moins.
+        if (IidMin && !cTable && d >= IidMin && !exclu)
+        {
+            chercher<N>(pos, ss, alpha, beta, d - IidRed, noeudCut);
+            bool            t2 = false;
+            const TTEntry*  f2 = TT.probe(cle, t2);
+            if (t2 && f2->move() && pos.pseudo_legal(f2->move()))
+            {
+                cTable     = f2->move();
+                priseTable = pos.capture_stage(cTable);
+            }
+        }
+        else if ((estPv || noeudCut) && d >= 6 && !cTable)
             d -= 1;
         if (d <= 0)
             return quiescence<estPv ? PV : NON_PV>(pos, ss, alpha, beta, 0);
@@ -917,6 +930,9 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     ss->menaces            = menaces;
     bool sauterTranquilles = false;
     v                      = meilleure;
+#ifdef PROFILE
+    bool premierPrise = false;
+#endif
 
     for (Move m; (m = tri.next_move(sauterTranquilles));)
     {
@@ -927,6 +943,10 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             continue;
 
         ss->nbCoups = ++rang;
+#ifdef PROFILE
+        if (rang == 1)
+            premierPrise = pos.capture_stage(m);
+#endif
         if (estPv)
             (ss + 1)->pv = nullptr;
 
@@ -1092,6 +1112,18 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                     PROF_COUNT(FH_TT_FIRST, cTable && rang == 1);
                     PROF_COUNT(FH_QUIET, !prise);
                     PROF_COUNT(FH_QUIET_SUMIDX, prise ? 0 : rang);
+#ifdef PROFILE
+                    if (!cTable && rang > 1)
+                    {
+                        const bool refu = m == ss->meurtriers[0] || m == ss->meurtriers[1] || m == reponse;
+                        PROF_COUNT(FH_NT_LATE, 1);
+                        PROF_COUNT(FH_NT_LATE_SUMIDX, rang);
+                        PROF_COUNT(FH_NT_LATE_CAP, prise);
+                        PROF_COUNT(FH_NT_LATE_REF, !prise && refu);
+                        PROF_COUNT(FH_NT_LATE_QUIET, !prise && !refu);
+                        PROF_COUNT(FH_NT_LATE_FCAP, premierPrise);
+                    }
+#endif
                     break;
                 }
                 alpha = v;

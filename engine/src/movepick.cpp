@@ -154,13 +154,17 @@ void MovePicker::noter() {
 
         if constexpr (T == QUIETS)
         {
-            int note = 2 * (*hPrincipal)[moi][hist_index(*m, menaces)] + 2 * (*hSuites[0])[p][a]
-                     + (*hSuites[1])[p][a] + (*hSuites[2])[p][a] + (*hSuites[3])[p][a];
+            // Poids des historiques en huitiemes (options OrdXxx, reglees par SPSA ;
+            // defaut = 2, 2, 1, 1, 1, 1, 1 : la somme se divise exactement par 8)
+            int note = Tune::OrdMain * (*hPrincipal)[moi][hist_index(*m, menaces)]
+                     + Tune::OrdSuite1 * (*hSuites[0])[p][a] + Tune::OrdSuite2 * (*hSuites[1])[p][a]
+                     + Tune::OrdSuite3 * (*hSuites[2])[p][a] + Tune::OrdSuite4 * (*hSuites[3])[p][a];
             if (Tune::ContHist6)
-                note += (*hSuites[5])[p][a];
-            note += (*hPions)[pawn_structure_index(pos.pawn_key())][p][a];
+                note += Tune::OrdSuite6 * (*hSuites[5])[p][a];
+            note += Tune::OrdPions * (*hPions)[pawn_structure_index(pos.pawn_key())][p][a];
+            note /= 8;
             if (pos.check_squares(type_of(p)) & a)  // un echec se regarde tot
-                note += 16384;
+                note += Tune::OrdEchec;
             if (ordreMenaces)  // fuir une menace : bien ; s'y exposer : mal
             {
                 const PieceType t = type_of(p);
