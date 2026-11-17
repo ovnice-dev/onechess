@@ -110,6 +110,20 @@ Value depuis_table(Value v, int ply, int r50) {
 }
 
 // Variante principale : le coup, puis celle du fils
+// Tension tactique (idee d'Onechess, 17-11) : pieces hors pions attaquees,
+// des deux cotes. Une position calme en a 0 ; une position de combat plusieurs.
+int tension(const Position& pos) {
+    int t = 0;
+    for (Color c : {WHITE, BLACK})
+    {
+        Bitboard att = 0;
+        att |= pos.attacks_by<PAWN>(~c) | pos.attacks_by<KNIGHT>(~c) | pos.attacks_by<BISHOP>(~c)
+             | pos.attacks_by<ROOK>(~c) | pos.attacks_by<QUEEN>(~c) | pos.attacks_by<KING>(~c);
+        t += popcount(att & pos.pieces(c) & ~pos.pieces(PAWN, KING));
+    }
+    return t;
+}
+
 void nouvelle_pv(Move* pv, Move m, const Move* fils) {
     *pv++ = m;
     if (fils)
@@ -432,6 +446,8 @@ void Thread::iterative_deepening() {
             scorePrecedent = meilleur;
             if (surprise)
                 f *= TmSurprisePct / 100.0;
+            if (TmTension)  // option en test : plus de temps quand la position est tendue, moins quand elle est calme
+                f *= std::clamp(1.0 + TmTension / 1000.0 * (tension(rootPos) - 1), 0.85, 1.25);
             const bool force = TmSingleMs && rootMoves.size() == 1
                             && Time.elapsed() >= std::min<TimePoint>(TmSingleMs, Time.optimum());
             if (TmEffortPct)  // le meilleur coup a absorbe l'essentiel des noeuds
@@ -896,6 +912,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                    &f->lowPlyHistory, ss->ply);
 
     const Bitboard menaces = threat_map(pos);  // avant que do_move ne change la position
+    // option en test : nos pieces attaquees ; a partir de LmrTension, on reduit un pli de moins
+    const bool tendu = LmrTension && popcount(menaces & pos.pieces(moi) & ~pos.pieces(PAWN, KING)) >= LmrTension;
     ss->menaces            = menaces;
     bool sauterTranquilles = false;
     v                      = meilleure;
@@ -995,7 +1013,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
         // ------------------------------------------------------------- LMR
         Depth r = reduction(d, rang) - ss->ttPv - estPv + 2 * noeudCut + (priseTable && !prise) + !progresse
-                + ((ss + 1)->coupures > 3);
+                + ((ss + 1)->coupures > 3) - tendu;
         if (prise)
             ss->noteStat = 0;
         else

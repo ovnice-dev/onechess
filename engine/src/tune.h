@@ -79,6 +79,8 @@
     X(QsStandTt,                      0,     0,     1) \
     X(CapBonusPct,                  100,    50,   200) \
     X(CapMalusPct,                  100,    50,   200) \
+    X(LmrTension,                     0,     0,     8) \
+    X(TmTension,                      0,     0,   300) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
