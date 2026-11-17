@@ -47,11 +47,13 @@
 
 namespace one {
 
+#ifndef ONE_FIGE
 namespace Tune {
 #define ONE_DEFINIR(nom, defaut, mini, maxi) int nom = defaut;
 TUNABLE_LIST(ONE_DEFINIR)
 #undef ONE_DEFINIR
 }  // namespace Tune
+#endif
 
 namespace Search {
 LimitsType        Limits;
@@ -801,11 +803,11 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         if ((ss - 1)->coup.is_ok() && !(ss - 1)->enEchec && !prisePrec && (ss - 1)->evalStatique != VALUE_NONE
             && ss->evalStatique != VALUE_NONE)
         {
-            const int ecart = std::clamp(-int((ss - 1)->evalStatique + ss->evalStatique), -189, 194) + 60;
-            f->mainHistory[~moi][hist_index((ss - 1)->coup, (ss - 1)->menaces)] << ecart * 11;
+            const int ecart = std::clamp(-int((ss - 1)->evalStatique + ss->evalStatique), -EcartMin, EcartMax) + EcartDecal;
+            f->mainHistory[~moi][hist_index((ss - 1)->coup, (ss - 1)->menaces)] << ecart * EcartPrincipal;
             if (!trouve && type_of(pos.piece_on(avantCase)) != PAWN && (ss - 1)->coup.type_of() != PROMOTION)
                 f->pawnHistory[pawn_structure_index(pos.pawn_key())][pos.piece_on(avantCase)][avantCase]
-                  << ecart * 13;
+                  << ecart * EcartPions;
         }
 
         // Progres par rapport a notre dernier trait (ou celui d'avant, s'il etait en echec)
@@ -819,7 +821,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             const bool adversaireEmpire = ss->evalStatique > -(ss - 1)->evalStatique;
             if (!estPv && reductionRecue >= 3 && !adversaireEmpire)
                 ++d;
-            if (reductionRecue >= 2 && d >= 2 && ss->evalStatique + (ss - 1)->evalStatique > 166)
+            if (reductionRecue >= 2 && d >= 2 && ss->evalStatique + (ss - 1)->evalStatique > ReculMarge)
                 --d;
         }
 
@@ -832,7 +834,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         }
 
         // Elagage par l'evaluation (futilite inverse)
-        if (!ss->ttPv && d <= RfpMaxDepth && eval - marge_futilite(d, progresse) - (ss - 1)->noteStat / 300 >= beta
+        if (!ss->ttPv && d <= RfpMaxDepth && eval - marge_futilite(d, progresse) - (ss - 1)->noteStat / RfpStatDiv >= beta
             && eval >= beta && eval < VALUE_TB_WIN_IN_MAX_PLY && (!cTable || priseTable))
             return beta > VALUE_TB_LOSS_IN_MAX_PLY ? (eval + beta) / 2 : eval;
 
@@ -852,7 +854,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
             if (vNul >= beta && vNul < VALUE_TB_WIN_IN_MAX_PLY)
             {
-                if (f->nmpMinPly || d < 14)
+                if (f->nmpMinPly || d < NmpVerifProf)
                     return vNul;
                 // verification sans coup nul (zugzwangs de finale)
                 f->nmpMinPly  = ss->ply + 3 * (d - r) / 4;
@@ -865,7 +867,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
         // ProbCut : une bonne prise qui depasse nettement beta a profondeur
         // reduite suffit (marge plus serree si la position progresse)
-        const Value betaPc = beta + ProbcutMargin - 64 * progresse;
+        const Value betaPc = beta + ProbcutMargin - ProbcutProgres * progresse;
         if (!estPv && !exclu && d >= ProbcutMinDepth && std::abs(beta) < VALUE_TB_WIN_IN_MAX_PLY
             && !(trouve && fiche->depth() >= d - 3 && vTable != VALUE_NONE && vTable < betaPc))
         {
@@ -967,11 +969,11 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
             if (prise || echec)
             {
-                if (prise && !echec && !ss->enEchec && dLmr < 8)  // meme la prise ne remonte pas a alpha
+                if (prise && !echec && !ss->enEchec && dLmr < PriseFutProf)  // meme la prise ne remonte pas a alpha
                 {
                     const Piece prisePiece = pos.piece_on(a);
                     const int   hp         = f->captureHistory[p][a][type_of(prisePiece)];
-                    if (ss->evalStatique + 234 + 247 * dLmr + 2 * PieceValue[prisePiece] + 134 * hp / 1024 <= alpha)
+                    if (ss->evalStatique + PriseFutBase + PriseFutPente * dLmr + 2 * PieceValue[prisePiece] + PriseFutHist * hp / 1024 <= alpha)
                         continue;
                 }
                 if (!pos.see_ge(m, -SeeCaptureMargin * d))
@@ -983,7 +985,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                 if (h < -HistPruneMargin * d && d <= HistPruneMaxDepth)  // a echoue partout ailleurs
                     continue;
                 if (!ss->enEchec && dLmr <= FutilityMaxDepth
-                    && Value(ss->evalStatique + FutilityMargin * (dLmr + 1) + h / 200) <= alpha)
+                    && Value(ss->evalStatique + FutilityMargin * (dLmr + 1) + h / FutHistDiv) <= alpha)
                     continue;
                 if (!pos.see_ge(m, -SeeQuietMargin * dLmr * dLmr))
                     continue;
@@ -1016,7 +1018,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             else if (noeudCut)
                 extension = -1;
         }
-        else if (echec && d > 8 && pos.see_ge(m))  // echec qui ne perd rien
+        else if (echec && d > EchecExtProf && pos.see_ge(m))  // echec qui ne perd rien
             extension = 1;
 
         nouvelle += extension;
@@ -1039,7 +1041,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         else
         {
             ss->noteStat = 2 * f->mainHistory[moi][hist_index(m, menaces)] + (*hs[0])[p][a] + (*hs[1])[p][a]
-                         + (*hs[3])[p][a] - 3800;
+                         + (*hs[3])[p][a] - NoteStatDecal;
             r -= ss->noteStat / LmrHistDiv;
         }
 
@@ -1059,7 +1061,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                           - (LmrShallowerMargin && v < meilleure + LmrShallowerMargin);
                 if (nouvelle > dr)
                     v = -chercher<NON_PV>(pos, ss + 1, -(alpha + 1), -alpha, nouvelle, !noeudCut);
-                suites(ss, p, a, 1334);
+                suites(ss, p, a, BonusApresLmr);
             }
         }
         else if (!estPv || rang > 1)

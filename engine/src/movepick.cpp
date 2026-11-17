@@ -120,7 +120,7 @@ void MovePicker::noter() {
         for (ExtMove* m = cur; m < fin; ++m)
         {
             const Piece prise = pos.piece_on(m->to_sq());
-            int         note  = 7 * PieceValue[prise] + (*hPrises)[pos.moved_piece(*m)][m->to_sq()][type_of(prise)] / 16;
+            int         note  = 7 * PieceValue[prise] + (*hPrises)[pos.moved_piece(*m)][m->to_sq()][type_of(prise)] / Tune::PriseHistDiv;
             // En passant et promotion par poussee arrivent sur une case vide
             if (m->type_of() == EN_PASSANT)
                 note += 7 * PawnValue;
@@ -246,7 +246,7 @@ Move MovePicker::next_move(bool sansTranquilles) {
                 cur = finMauvaises;
                 fin = generate<QUIETS>(pos, cur);
                 noter<QUIETS>();
-                remonter(cur, fin, -3000 * prof);
+                remonter(cur, fin, -Tune::TriPlancher * prof);
             }
             ++etape;
             break;

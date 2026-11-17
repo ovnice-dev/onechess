@@ -91,6 +91,25 @@
     X(OrdSuite6,                      8,     0,    32) \
     X(OrdPions,                       8,     0,    32) \
     X(OrdEchec,                   16384,     0, 32768) \
+    X(EcartMin,                     189,    50,   400) \
+    X(EcartMax,                     194,    50,   400) \
+    X(EcartDecal,                    60,     0,   200) \
+    X(EcartPrincipal,                11,     0,    30) \
+    X(EcartPions,                    13,     0,    30) \
+    X(ReculMarge,                   166,    50,   400) \
+    X(RfpStatDiv,                   300,   100,  1000) \
+    X(NmpVerifProf,                  14,     8,    20) \
+    X(ProbcutProgres,                64,     0,   150) \
+    X(PriseFutProf,                   8,     4,    12) \
+    X(PriseFutBase,                 234,   100,   400) \
+    X(PriseFutPente,                247,   100,   400) \
+    X(PriseFutHist,                 134,     0,   300) \
+    X(FutHistDiv,                   200,    50,   600) \
+    X(NoteStatDecal,               3800,     0,  8000) \
+    X(BonusApresLmr,               1334,   400,  3000) \
+    X(EchecExtProf,                   8,     4,    14) \
+    X(PriseHistDiv,                  16,     4,    48) \
+    X(TriPlancher,                 3000,  1000,  6000) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
@@ -106,7 +125,15 @@
 namespace one {
 namespace Tune {
 
+// ONE_FIGE (compilations de diffusion, build.sh) : les constantes deviennent
+// constexpr, le compilateur les integre au code (+2 a 3 % de vitesse mesures
+// le 17-11) ; elles ne sont alors plus reglables par setoption. Les tests
+// (CI, SPSA) compilent sans ONE_FIGE.
+#ifdef ONE_FIGE
+#define TUNABLE_DECLARE(name, def, lo, hi) constexpr int name = def;
+#else
 #define TUNABLE_DECLARE(name, def, lo, hi) extern int name;
+#endif
 TUNABLE_LIST(TUNABLE_DECLARE)
 #undef TUNABLE_DECLARE
 

@@ -320,6 +320,7 @@ void UCI::init(OptionsMap& o) {
     o["Debug Log File"] << Option("", [](const Option& v) { start_logger(std::string(v)); });
 
     // Constantes de recherche : reglables (tests, SPSA), cachees de la liste
+#ifndef ONE_FIGE
 #define ONE_OPTION_REGLAGE(nom, defaut, mini, maxi)                \
     o[#nom] << Option(defaut, mini, maxi, [](const Option& v) {    \
         Tune::nom = int(v);                                        \
@@ -328,6 +329,7 @@ void UCI::init(OptionsMap& o) {
     o[#nom].hidden = true;
     TUNABLE_LIST(ONE_OPTION_REGLAGE)
 #undef ONE_OPTION_REGLAGE
+#endif
 }
 
 UCI::Option::Option(OnChange f) : genre(BOUTON), rappel(std::move(f)) {}
