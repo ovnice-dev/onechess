@@ -45,6 +45,7 @@ struct SharedHist {
     CorrectionHistory   nonPawnCorrection[COLOR_NB];
     CorrectionHistory   minorCorrection;
     CorrectionHistory   majorCorrection;
+    CorrectionHistory   menaceCorrection;   // CorrMenaceWeight (en test, 18-11)
     ContinuationHistory continuationHistory[2][2];
 };
 extern bool SharedHistOn;  // option SharedHistories
@@ -91,6 +92,7 @@ class Thread {
     CorrectionHistory (&nonPawnCorrection)[COLOR_NB];
     CorrectionHistory&  minorCorrection;
     CorrectionHistory&  majorCorrection;
+    CorrectionHistory&  menaceCorrection;
     ContinuationHistory (&continuationHistory)[2][2];  // [en echec][prise]
 
    private:

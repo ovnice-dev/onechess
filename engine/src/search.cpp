@@ -159,6 +159,8 @@ int carre_signe(int c) { return c * std::abs(c); }
 
 // Evaluation corrigee par ce que la recherche a appris de positions voisines
 // (meme structure de pions, memes pieces, meme paire de coups).
+Key cle_menaces(const Position& pos);
+
 Value evaluation_corrigee(Value v, const Thread* f, const Position& pos, const Stack* ss) {
     PROF_SCOPE(CORR);
     const Color moi = pos.side_to_move();
@@ -174,6 +176,9 @@ Value evaluation_corrigee(Value v, const Thread* f, const Position& pos, const S
                    / CorrHistDiv);
     if (CorrMajorWeight)
         v += Value(CorrMajorWeight * carre_signe(f->majorCorrection[moi][correction_index(cle_majeures(pos))])
+                   / CorrHistDiv);
+    if (CorrMenaceWeight)
+        v += Value(CorrMenaceWeight * carre_signe(f->menaceCorrection[moi][correction_index(cle_menaces(pos))])
                    / CorrHistDiv);
     if (CorrContWeight)
         if (const Move m = (ss - 1)->coup; m.is_ok())
@@ -196,6 +201,21 @@ void precharger_corrections(const Position& pos, const Thread* f, const Stack* s
         prefetch(&(*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()]);
 }
 
+// Cle des menaces (idee d'Onechess, 18-11) : quelles pieces hors pions de chaque
+// camp sont attaquees. Deux positions qui ont les memes pieces en prise ont
+// souvent la meme erreur d'evaluation : le reseau juge mal les tensions.
+Key cle_menaces(const Position& pos) {
+    const Color    moi = pos.side_to_move();
+    const Bitboard nous = pos.pieces(moi) & ~pos.pieces(PAWN, KING), eux = pos.pieces(~moi) & ~pos.pieces(PAWN, KING);
+    const Bitboard a = threat_map_complete(pos) & nous;
+    Bitboard       par = 0;
+    par |= pos.attacks_by<PAWN>(moi) | pos.attacks_by<KNIGHT>(moi) | pos.attacks_by<BISHOP>(moi)
+         | pos.attacks_by<ROOK>(moi) | pos.attacks_by<QUEEN>(moi) | pos.attacks_by<KING>(moi);
+    const Bitboard b = par & eux;
+    const Key      k = (a * 0x9E3779B97F4A7C15ULL) ^ (b * 0xC2B2AE3D27D4EB4FULL);
+    return k ^ (k >> 29);
+}
+
 void apprendre_correction(const Position& pos, Stack* ss, Thread* f, int bonus) {
     const Color moi = pos.side_to_move();
     f->correctionHistory[moi][correction_index(pos.pawn_key())] << bonus;
@@ -205,6 +225,8 @@ void apprendre_correction(const Position& pos, Stack* ss, Thread* f, int bonus) 
         f->minorCorrection[moi][correction_index(cle_mineures(pos))] << bonus;
     if (CorrMajorWeight)
         f->majorCorrection[moi][correction_index(cle_majeures(pos))] << bonus;
+    if (CorrMenaceWeight)
+        f->menaceCorrection[moi][correction_index(cle_menaces(pos))] << bonus;
     if (const Move m = (ss - 1)->coup; m.is_ok())
         (*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()] << bonus;
 }

@@ -63,6 +63,7 @@
     X(CorrContWeight,                 1,     0,     8) \
     X(CorrMinorWeight,                1,     0,     8) \
     X(CorrMajorWeight,                1,     0,     8) \
+    X(CorrMenaceWeight,               0,     0,     8) \
     X(ThreatHist,                     1,     0,     1) \
     X(BadQuiets,                      13845,     0, 30000) \
     X(ContHist6,                      1,     0,     1) \

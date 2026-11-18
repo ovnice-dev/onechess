@@ -40,6 +40,7 @@ Thread::Thread(std::size_t n, SharedHist* c) :
     correctionHistory(c ? c->correctionHistory : perso.correctionHistory),
     nonPawnCorrection(c ? c->nonPawnCorrection : perso.nonPawnCorrection),
     minorCorrection(c ? c->minorCorrection : perso.minorCorrection),
+    menaceCorrection(c ? c->menaceCorrection : perso.menaceCorrection),
     majorCorrection(c ? c->majorCorrection : perso.majorCorrection),
     continuationHistory(c ? c->continuationHistory : perso.continuationHistory),
     numero(n),
@@ -95,6 +96,7 @@ void Thread::clear() {
     nonPawnCorrection[WHITE].fill(0);
     nonPawnCorrection[BLACK].fill(0);
     minorCorrection.fill(0);
+    menaceCorrection.fill(0);
     majorCorrection.fill(0);
     for (auto& parEchec : continuationHistory)
         for (auto& parPrise : parEchec)
