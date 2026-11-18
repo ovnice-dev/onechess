@@ -68,6 +68,32 @@ bench 9
     echo "OK  $OUT  $(ls -lh "$OUT" | awk '{print $5}')"
     exit 0
     ;;
+  clang)
+    # Clang (LLVM, MSYS2 mingw64) + optimisation guidee par profil : mesure du
+    # 18-11, bench 12, ABBA : +9,8 % (max) / +8,4 % (moyenne) contre GCC + PGO,
+    # memes noeuds. Paquets : mingw-w64-x86_64-clang, -lld, -llvm, -compiler-rt.
+    CLANG_BIN="${CLANG_BIN:-/c/msys64/mingw64/bin}"
+    CXX="$CLANG_BIN/clang++"; CC="$CLANG_BIN/clang"; PROFDATA="$CLANG_BIN/llvm-profdata"
+    PDIR="$(pwd)/bin/pgo-clang"
+    rm -rf "$PDIR"; mkdir -p "$PDIR" bin
+    CF="$COMMON $ARCH $INC ${EXTRA:-} -O3 -DNDEBUG -flto -fno-exceptions -fuse-ld=lld"
+    "$CC" $ARCH $INC -O3 -DNDEBUG -flto -c fathom/tbprobe.c -o "$PDIR/tbprobe.o"
+    echo "  1/3  compilation instrumentee (clang)"
+    "$CXX" $CF -fprofile-instr-generate src/*.cpp "$PDIR/tbprobe.o" -o bin/onechess-gen.exe
+    echo "  2/3  execution du profil"
+    PNET="${NET:-$(pwd -W 2>/dev/null || pwd)/bin/onechess.nnue}"
+    printf 'setoption name EvalFile value %s\nbench 12\nbench 9\n' "$PNET" \
+      | LLVM_PROFILE_FILE="$PDIR/prof.profraw" ./bin/onechess-gen.exe > "$PDIR/profil.log" 2>&1
+    if grep -q "introuvable" "$PDIR/profil.log" || ! grep -q "NNUE [0-9]*x768x" "$PDIR/profil.log"; then
+        echo "ECHEC : le reseau $PNET n'a pas ete charge pendant le profil (chemin Windows : C:/...)" >&2; exit 1
+    fi
+    "$PROFDATA" merge -o "$PDIR/prof.profdata" "$PDIR/prof.profraw"
+    echo "  3/3  recompilation guidee (clang)"
+    "$CXX" $CF -fprofile-instr-use="$PDIR/prof.profdata" src/*.cpp "$PDIR/tbprobe.o" -o "$OUT"
+    rm -f bin/onechess-gen.exe
+    echo "OK  $OUT  $(ls -lh "$OUT" | awk '{print $5}')"
+    exit 0
+    ;;
   *)
     echo "mode inconnu: $MODE" >&2; exit 1 ;;
 esac
