@@ -711,6 +711,10 @@ void Position::undo_null_move() {
 
 // Cle approchee apres m (pour precharger la table) : piece deplacee, piece
 // prise et trait ; les cas speciaux ne sont pas traites.
+Key Position::key_after_null() const {
+    return st->key ^ Z.noirs ^ (st->epSquare != SQ_NONE ? Z.ep[file_of(st->epSquare)] : 0);
+}
+
 Key Position::key_after(Move m) const {
     PROF_SCOPE(KEYAFTER);
     const Square de = m.from_sq(), a = m.to_sq();

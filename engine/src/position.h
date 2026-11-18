@@ -166,6 +166,7 @@ class Position {
     int        game_ply() const { return demiCoups; }
     Key        key() const { return st->key; }
     Key        key_after(Move m) const;
+    Key        key_after_null() const;  // cle apres un coup nul (prechargement de la table)
     Key        pawn_key() const { return st->pawnKey; }
     Key        non_pawn_key(Color c) const { return st->nonPawnKey[c]; }
     Value      non_pawn_material(Color c) const { return st->nonPawnMaterial[c]; }

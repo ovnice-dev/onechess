@@ -839,6 +839,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             && ss->evalStatique >= beta && pos.non_pawn_material(moi) && !(NmpTension && attaquees >= NmpTension) && ss->ply >= f->nmpMinPly
             && beta > VALUE_TB_LOSS_IN_MAX_PLY)
         {
+            prefetch(TT.first_entry(pos.key_after_null()));  // la fiche du fils arrive pendant les preparatifs
             const Depth r = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR) + d / NmpDepthDiv
                           + NmpBaseReduction;
             ss->coup      = Move::null();
@@ -872,6 +873,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             {
                 if (m == exclu || !pos.legal(m))
                     continue;
+                prefetch(TT.first_entry(pos.key_after(m)));
                 const Piece p = pos.moved_piece(m);
                 ss->coup      = m;
                 ss->suite     = &f->continuationHistory[ss->enEchec][true][p][m.to_sq()];
