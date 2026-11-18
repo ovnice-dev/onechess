@@ -695,8 +695,8 @@ bool load(const std::string& path) {
     const bool pairMul   = activation & PAIRMUL_FLAG;
     const bool fullThr   = activation & FULLTHREAT_FLAG;
     activation &= ~(PAIRS_FLAG | THREAT_FLAG | HIDDEN_FLAG | PAIRMUL_FLAG | FULLTHREAT_FLAG);
-    if (fullThr && (threats || hasHidden || pairs || activation != ACT_CRELU))
-        return false;   // menaces completes : CReLU, seules
+    if (fullThr && (threats || hasHidden || activation != ACT_CRELU))
+        return false;   // menaces completes : CReLU, sans couches cachees (paires de pions permises : 18-11)
     if (pairMul && !hasHidden)
         return false;
     if (hasHidden && (threats || activation != ACT_CRELU))
