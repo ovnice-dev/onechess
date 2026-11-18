@@ -28,6 +28,13 @@
 
 #if defined(__AVX2__)
     #include <immintrin.h>
+    // AVX-512 (18-11) : registres de 32 int16, pour les chemins les plus chauds
+    // (mise a jour de l'accumulateur, sortie, table de Finny). Les autres
+    // fonctions gardent l'AVX2, toujours present sur ces processeurs. Resultat
+    // identique au bit pres (sommes int16 / int32 qui bouclent pareil).
+    #if defined(__AVX512F__) && defined(__AVX512BW__) && !defined(ONE_FT_INT8) && !defined(ONE_SANS_AVX512)
+        #define ONE_AVX512 1
+    #endif
 #elif defined(__ARM_NEON) && defined(__aarch64__)
     // ARM 64 bits (Mac M1+, Graviton, Ampere d'Oracle) : registres de 8 int16.
     // Les sommes int16 et int32 bouclent comme en AVX2 : resultat identique
@@ -186,7 +193,22 @@ inline void sub_feature(std::int16_t* acc, const FtW* w) {
 // Produit scalaire d'une moitie d'accumulateur avec ses poids de sortie,
 // activation ReLU ecretee comprise.
 inline std::int32_t forward_half(const std::int16_t* acc, const std::int16_t* w) {
-#if defined(__AVX2__)
+#if defined(ONE_AVX512)
+    const __m512i zero = _mm512_setzero_si512();
+    const __m512i qa   = _mm512_set1_epi16(QA);
+    __m512i       sum  = _mm512_setzero_si512();
+    for (int i = 0; i < HIDDEN_SIZE; i += 32)
+    {
+        __m512i a = _mm512_min_epi16(_mm512_max_epi16(_mm512_loadu_si512(acc + i), zero), qa);
+        const __m512i b = _mm512_loadu_si512(w + i);
+    #if defined(__AVX512VNNI__)
+        sum = _mm512_dpwssd_epi32(sum, a, b);
+    #else
+        sum = _mm512_add_epi32(sum, _mm512_madd_epi16(a, b));
+    #endif
+    }
+    return _mm512_reduce_add_epi32(sum);
+#elif defined(__AVX2__)
     const __m256i zero = _mm256_setzero_si256();
     const __m256i qa   = _mm256_set1_epi16(QA);
     __m256i       sum  = _mm256_setzero_si256();
@@ -415,7 +437,20 @@ bool requires_refresh(const DirtyPiece& dp, Color p) {
 // identique au bit pres -- l'arithmetique int16 modulo 2^16 est associative --
 // ce que verifient l'assertion de evaluate() en compilation de debogage et le
 // nombre de noeuds a profondeur fixe.
-#if defined(__AVX2__)
+#if defined(ONE_AVX512)
+template<int NS, int NA>
+inline void maj_fixe(const std::int16_t* s, std::int16_t* d, const FtW* const* subs, const FtW* const* adds) {
+    for (int j = 0; j < HIDDEN_SIZE; j += 32)
+    {
+        __m512i v = _mm512_loadu_si512(s + j);
+        for (int k = 0; k < NS; ++k)
+            v = _mm512_sub_epi16(v, _mm512_loadu_si512(subs[k] + j));
+        for (int k = 0; k < NA; ++k)
+            v = _mm512_add_epi16(v, _mm512_loadu_si512(adds[k] + j));
+        _mm512_storeu_si512(d + j, v);
+    }
+}
+#elif defined(__AVX2__)
 // Mise a jour d'une perspective quand le nombre de lignes retirees et ajoutees
 // est connu a la compilation (coup tranquille 1+1, prise 2+1, roque 2+2,
 // promotion 1+1 ou 2+1) : boucles internes deroulees, rien a recompter a
@@ -1036,6 +1071,30 @@ void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
             e.bb[c][pt] = now;
         }
 
+#if defined(ONE_AVX512)
+    if (nps == 0 && npa == 0)
+    {
+        constexpr int T5 = 8;   // 8 registres de 32 valeurs : 256 valeurs par tuile
+        for (int j = 0; j < HIDDEN_SIZE; j += 32 * T5)
+        {
+            __m512i v[T5];
+            for (int t = 0; t < T5; ++t)
+                v[t] = _mm512_loadu_si512(e.acc + j + 32 * t);
+            for (int k = 0; k < ns; ++k)
+                for (int t = 0; t < T5; ++t)
+                    v[t] = _mm512_sub_epi16(v[t], _mm512_loadu_si512(subs[k] + j + 32 * t));
+            for (int k = 0; k < na; ++k)
+                for (int t = 0; t < T5; ++t)
+                    v[t] = _mm512_add_epi16(v[t], _mm512_loadu_si512(adds[k] + j + 32 * t));
+            for (int t = 0; t < T5; ++t)
+            {
+                _mm512_storeu_si512(e.acc + j + 32 * t, v[t]);
+                _mm512_storeu_si512(acc.v[p] + j + 32 * t, v[t]);
+            }
+        }
+        return;
+    }
+#endif
 #if defined(__AVX2__)
     constexpr int TILE = 8;   // 8 registres de 16 valeurs : 128 valeurs par tuile
     for (int j = 0; j < HIDDEN_SIZE; j += 16 * TILE)
