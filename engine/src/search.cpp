@@ -960,6 +960,11 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     {
         if (m == exclu || !pos.legal(m))
             continue;
+#ifndef ONE_PF_TARD
+        // la fiche du fils est demandee des le choix du coup : les elagages et
+        // les historiques qui suivent couvrent une partie de l'attente memoire
+        prefetch(TT.first_entry(pos.key_after(m)));
+#endif
         // a la racine, seulement les coups demandes (et pas ceux des lignes MultiPV deja faites)
         if (racine && std::find(f->rootMoves.begin() + f->pvIdx, f->rootMoves.end(), m) == f->rootMoves.end())
             continue;
@@ -1047,7 +1052,9 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         ss->coup      = m;
         ss->suite     = &f->continuationHistory[ss->enEchec][prise][p][a];
         ss->suiteCorr = &f->continuationCorrectionHistory[p][a];
+#ifdef ONE_PF_TARD
         prefetch(TT.first_entry(pos.key_after(m)));
+#endif
 
         const std::uint64_t noeudsAvant = racine ? f->nodes.load(std::memory_order_relaxed) : 0;
         f->nodes.fetch_add(1, std::memory_order_relaxed);
