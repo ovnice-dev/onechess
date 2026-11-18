@@ -83,7 +83,7 @@ bench 9
     echo "  2/3  execution du profil"
     PNET="${NET:-$(pwd -W 2>/dev/null || pwd)/bin/onechess.nnue}"
     printf 'setoption name EvalFile value %s\nbench 12\nbench 9\n' "$PNET" \
-      | LLVM_PROFILE_FILE="$PDIR/prof.profraw" ./bin/onechess-gen.exe > "$PDIR/profil.log" 2>&1
+      | LLVM_PROFILE_FILE="$PDIR/prof.profraw" ${PGO_RUN:-} ./bin/onechess-gen.exe > "$PDIR/profil.log" 2>&1
     if grep -q "introuvable" "$PDIR/profil.log" || ! grep -q "NNUE [0-9]*x768x" "$PDIR/profil.log"; then
         echo "ECHEC : le reseau $PNET n'a pas ete charge pendant le profil (chemin Windows : C:/...)" >&2; exit 1
     fi
