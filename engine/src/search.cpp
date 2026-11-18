@@ -179,6 +179,10 @@ Value evaluation_corrigee(Value v, const Thread* f, const Position& pos, const S
         if (const Move m = (ss - 1)->coup; m.is_ok())
             v += Value(CorrContWeight * carre_signe((*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()])
                        / CorrHistDiv);
+    // R50Div (en test) : plus la regle des 50 coups approche, plus l'evaluation
+    // se rapproche de la nulle (un avantage qu'on ne concretise pas s'evapore)
+    if (R50Div)
+        v = Value(int(v) * (R50Div - pos.rule50_count()) / R50Div);
     return std::clamp(v, Value(VALUE_TB_LOSS_IN_MAX_PLY + 1), Value(VALUE_TB_WIN_IN_MAX_PLY - 1));
 }
 
@@ -243,17 +247,10 @@ void apprendre_coupure(const Position& pos, Stack* ss, Thread* f, Move meilleur,
                        const Move* tranquilles, int nbTranq, const Move* prises, int nbPrises, Depth d) {
     PROF_SCOPE(HISTUPD);
     int bonus = bonus_stat(d);
-    if (BonusCount)  // option en test (BonusCntF)
-        bonus += int(std::int64_t(bonus) * (nbTranq + nbPrises) * BonusCount / 65536);
-    if (BonusStatDiv)  // option en test : la note du coup precedent (Stockfish, 12-2025)
-        bonus += (ss - 1)->noteStat / BonusStatDiv;
     const int malus = malus_stat(d);
 
-    // CapBonusPct / CapMalusPct (en test) : les prises recoivent leur propre
-    // dose de recompense et de malus, separee de celle des tranquilles
-    const int bonusPrise = bonus * CapBonusPct / 100, malusPrise = malus * CapMalusPct / 100;
     if (pos.capture_stage(meilleur))
-        f->captureHistory[pos.moved_piece(meilleur)][meilleur.to_sq()][type_of(pos.piece_on(meilleur.to_sq()))] << bonusPrise;
+        f->captureHistory[pos.moved_piece(meilleur)][meilleur.to_sq()][type_of(pos.piece_on(meilleur.to_sq()))] << bonus;
     else
     {
         recompenser_tranquille(pos, ss, f, meilleur, bonus, ss->menaces);
@@ -277,7 +274,7 @@ void apprendre_coupure(const Position& pos, Stack* ss, Thread* f, Move meilleur,
     for (int i = 0; i < nbPrises; ++i)
     {
         const Move c = prises[i];
-        f->captureHistory[pos.moved_piece(c)][c.to_sq()][type_of(pos.piece_on(c.to_sq()))] << -malusPrise;
+        f->captureHistory[pos.moved_piece(c)][c.to_sq()][type_of(pos.piece_on(c.to_sq()))] << -malus;
     }
 }
 
@@ -337,10 +334,6 @@ void Thread::iterative_deepening() {
     ss->pv = pv;
 
     lowPlyHistory.fill(0);  // il ne vaut que pour cette racine
-    if (HistRootPct < 100)  // option en test : l'historique principal s'estompe a chaque nouvelle racine
-        for (auto& camp : mainHistory)
-            for (auto& n : camp)
-                n = std::int16_t(int(n) * HistRootPct / 100);
     rootPos.set_thread(this);
     const bool surprise = is_main() && DemiCoupAttendu == rootPos.game_ply() && rootPos.key() != CleAttendue;
 
@@ -595,11 +588,7 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
             meilleure = vTable;
         if (meilleure >= beta)
         {
-            // QsStandTt (en test, Stockfish 2026) : ne garder que l'evaluation,
-            // pas de borne tiree du stand pat
-            if (!trouve && QsStandTt)
-                fiche->save(cle, VALUE_NONE, false, BOUND_NONE, DEPTH_NONE, Move::none(), brute, TT.generation());
-            else if (!trouve)
+            if (!trouve)
                 fiche->save(cle, vers_table(meilleure, ss->ply), false, BOUND_LOWER, DEPTH_ENTRY_TT + 1, Move::none(),
                             brute, TT.generation());
             return meilleure;
@@ -840,7 +829,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
         // Coup nul : meme en passant son tour, on reste au-dessus de beta
         if (!estPv && (ss - 1)->coup != Move::null() && !exclu && d >= NmpMinDepth && eval >= beta
-            && ss->evalStatique >= beta - NmpImp * progresse && pos.non_pawn_material(moi) && ss->ply >= f->nmpMinPly
+            && ss->evalStatique >= beta && pos.non_pawn_material(moi) && ss->ply >= f->nmpMinPly
             && beta > VALUE_TB_LOSS_IN_MAX_PLY)
         {
             const Depth r = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR) + d / NmpDepthDiv
@@ -1035,7 +1024,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
         // ------------------------------------------------------------- LMR
         Depth r = reduction(d, rang) - ss->ttPv - estPv + 2 * noeudCut + (priseTable && !prise) + !progresse
-                + ((ss + 1)->coupures > 3) - tendu;
+                + ((ss + 1)->coupures > 3) - tendu
+                - (LmrRefut && (m == ss->meurtriers[0] || m == ss->meurtriers[1] || m == reponse));
         if (prise)
             ss->noteStat = 0;
         else
@@ -1147,6 +1137,12 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         apprendre_coupure(pos, ss, f, meilleurCoup, avantCase, tranquilles, nbTranq, prises, nbPrises, d);
     else if (!prisePrec && avantCase != SQ_NONE)  // rien n'a battu alpha : le coup d'avant etait bon
         suites(ss - 1, pos.piece_on(avantCase), avantCase, bonus_stat(d) * (1 + (meilleure > beta)));
+
+    // CoupureAdoucie (en test) : hors PV, une coupure loin au-dessus de beta est
+    // ramenee vers beta d'autant plus que la recherche etait courte
+    if (CoupureAdoucie && !estPv && meilleure >= beta && std::abs(meilleure) < VALUE_TB_WIN_IN_MAX_PLY
+        && std::abs(beta) < VALUE_TB_WIN_IN_MAX_PLY)
+        meilleure = Value((int(meilleure) * d + int(beta)) / (d + 1));
 
     if (!exclu && !(racine && f->rootMoves.size() > 1))
         fiche->save(cle, vers_table(meilleure, ss->ply), ss->ttPv,

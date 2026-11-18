@@ -72,13 +72,9 @@
     X(LmrShallowerMargin,             8,     0,    60) \
     X(K1Ext,                          1,     0,     3) \
     X(QsFin,                          3,     0,     3) \
-    X(BonusCount,                     0,     0,  1024) \
-    X(HistRootPct,                  100,    50,   100) \
-    X(BonusStatDiv,                   0,     0,   256) \
-    X(NmpImp,                         0,     0,   200) \
-    X(QsStandTt,                      0,     0,     1) \
-    X(CapBonusPct,                  100,    50,   200) \
-    X(CapMalusPct,                  100,    50,   200) \
+    X(R50Div,                         0,     0,   400) \
+    X(CoupureAdoucie,                 0,     0,     1) \
+    X(LmrRefut,                       0,     0,     1) \
     X(IidMin,                         0,     0,    20) \
     X(IidRed,                         3,     1,     8) \
     X(LmrTension,                     0,     0,     8) \
