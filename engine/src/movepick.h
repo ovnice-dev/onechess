@@ -40,6 +40,14 @@ inline Bitboard threat_map(const Position& pos) {
          | pos.attacks_by<ROOK>(eux) | pos.attacks_by<QUEEN>(eux) | pos.attacks_by<KING>(eux);
 }
 
+// Cases attaquees par le camp qui n'a pas le trait, toujours calculees
+// (NmpTension, RfpTension), meme quand ThreatHist est eteint.
+inline Bitboard threat_map_complete(const Position& pos) {
+    const Color eux = ~pos.side_to_move();
+    return pos.attacks_by<PAWN>(eux) | pos.attacks_by<KNIGHT>(eux) | pos.attacks_by<BISHOP>(eux)
+         | pos.attacks_by<ROOK>(eux) | pos.attacks_by<QUEEN>(eux) | pos.attacks_by<KING>(eux);
+}
+
 // Place d'un coup dans l'historique principal : depart et arrivee, et pour
 // chacune des deux cases, menacee ou non (idee de l'historique « 4D » de
 // plusieurs moteurs libres).

@@ -75,6 +75,10 @@
     X(R50Div,                         0,     0,   400) \
     X(CoupureAdoucie,                 0,     0,     1) \
     X(LmrRefut,                       0,     0,     1) \
+    X(LmrEchec,                       0,     0,     1) \
+    X(LmrPrise,                       0,     0,     1) \
+    X(NmpTension,                     0,     0,     8) \
+    X(RfpTension,                     0,     0,   100) \
     X(IidMin,                         0,     0,    20) \
     X(IidRed,                         3,     1,     8) \
     X(LmrTension,                     0,     0,     8) \

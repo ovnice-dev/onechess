@@ -814,6 +814,12 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                 --d;
         }
 
+        // NmpTension / RfpTension (en test, idees d'Onechess) : nos pieces hors pions
+        // attaquees ; une position ou l'on est menace se juge mal sans chercher
+        const int attaquees = (NmpTension || RfpTension)
+                              ? popcount(threat_map_complete(pos) & pos.pieces(moi) & ~pos.pieces(PAWN, KING))
+                              : 0;
+
         // Rasage : tres loin sous alpha, une quiescence decide
         if (!estPv && d <= RazorMaxDepth && eval + RazorMargin * d < alpha)
         {
@@ -823,13 +829,14 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         }
 
         // Elagage par l'evaluation (futilite inverse)
-        if (!ss->ttPv && d <= RfpMaxDepth && eval - marge_futilite(d, progresse) - (ss - 1)->noteStat / RfpStatDiv >= beta
+        if (!ss->ttPv && d <= RfpMaxDepth
+            && eval - marge_futilite(d, progresse) - (ss - 1)->noteStat / RfpStatDiv - RfpTension * attaquees >= beta
             && eval >= beta && eval < VALUE_TB_WIN_IN_MAX_PLY && (!cTable || priseTable))
             return beta > VALUE_TB_LOSS_IN_MAX_PLY ? (eval + beta) / 2 : eval;
 
         // Coup nul : meme en passant son tour, on reste au-dessus de beta
         if (!estPv && (ss - 1)->coup != Move::null() && !exclu && d >= NmpMinDepth && eval >= beta
-            && ss->evalStatique >= beta && pos.non_pawn_material(moi) && ss->ply >= f->nmpMinPly
+            && ss->evalStatique >= beta && pos.non_pawn_material(moi) && !(NmpTension && attaquees >= NmpTension) && ss->ply >= f->nmpMinPly
             && beta > VALUE_TB_LOSS_IN_MAX_PLY)
         {
             const Depth r = std::min(std::max(0, int(eval - beta)) / NmpEvalDiv, NmpMaxEvalR) + d / NmpDepthDiv
@@ -1025,7 +1032,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         // ------------------------------------------------------------- LMR
         Depth r = reduction(d, rang) - ss->ttPv - estPv + 2 * noeudCut + (priseTable && !prise) + !progresse
                 + ((ss + 1)->coupures > 3) - tendu
-                - (LmrRefut && (m == ss->meurtriers[0] || m == ss->meurtriers[1] || m == reponse));
+                - (LmrRefut && (m == ss->meurtriers[0] || m == ss->meurtriers[1] || m == reponse))
+                - (LmrEchec && echec) - (LmrPrise && prise);
         if (prise)
             ss->noteStat = 0;
         else
