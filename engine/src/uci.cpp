@@ -520,7 +520,11 @@ void UCI::loop(int argc, char* argv[]) {
                            || cmd == "perfttest" || cmd == "eval" || cmd == "go";
         if (attendre && (Search::Ponder || Search::Limits.infinite))
             Threads.stop = true;
-        if (attendre && cmd != "go")
+        // « go » aussi (18-11) : regler Ponder, le temps ou la table pendant
+        // qu'une ancienne recherche tourne encore la derangeait (une recherche
+        // normale qui voyait Ponder passer a vrai ne s'arretait plus, et le
+        // moteur se figeait en attendant sa fin).
+        if (attendre)
             Threads.main()->wait_for_search_finished();
 
         if (cmd == "quit")
