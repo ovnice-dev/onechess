@@ -483,6 +483,32 @@ inline void maj_fixe(const std::int16_t* s, std::int16_t* d, const FtW* const* s
 }
 #endif
 
+#if defined(__AVX2__) && !defined(ONE_AVX512) && !defined(ONE_FT_INT8)
+#define ONE_SORTIE_FUSIONNEE 1
+// Derniere mise a jour et sortie en une passe (18-11) : chaque tranche de 16
+// neurones, a peine calculee et ecrite, passe tout de suite par la CReLU et le
+// produit avec les poids de sortie, sans relire l'accumulateur.
+template<int NS, int NA>
+inline std::int32_t maj_sortie(const std::int16_t* s, std::int16_t* d, const FtW* const* subs, const FtW* const* adds,
+                               const std::int16_t* w) {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i qa   = _mm256_set1_epi16(QA);
+    __m256i       sum  = _mm256_setzero_si256();
+    for (int j = 0; j < HIDDEN_SIZE; j += 16)
+    {
+        __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
+        for (int k = 0; k < NS; ++k)
+            v = _mm256_sub_epi16(v, FT_LOAD(subs[k] + j));
+        for (int k = 0; k < NA; ++k)
+            v = _mm256_add_epi16(v, FT_LOAD(adds[k] + j));
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
+        const __m256i a = _mm256_min_epi16(_mm256_max_epi16(v, zero), qa);
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + j))));
+    }
+    return hsum(sum);
+}
+#endif
+
 void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const PawnSets* ps) {
     PROF_SCOPE(NNUE_APPLY);
 #ifdef OLD_APPLY
@@ -2152,6 +2178,64 @@ Value evaluate(const Position& pos) {
              : Net->threats     ? output_threats(scratch, pos, current_bucket(pos))
                                 : output(scratch, pos.side_to_move(), current_bucket(pos));
     }
+
+#if defined(ONE_SORTIE_FUSIONNEE) && defined(NDEBUG)
+    // Cas le plus courant : le parent est calcule, un seul coup a appliquer,
+    // pas de changement d'expert ni de bucket, reseau simple (CReLU, sans
+    // paires, menaces ni couches cachees) : mise a jour et sortie fusionnees.
+    if (st->accGen != NetGen && st->previous && st->previous->accIndex >= 0 && st->previous->accGen == NetGen
+        && !Net->pairs && !Net->threats && !Net->fullThreats && !Net->l1 && Net->activation == ACT_CRELU)
+    {
+        const DirtyPiece& dp = st->dirtyPiece;
+        bool              ok = dp.count > 0 && !requires_refresh(dp, WHITE) && !requires_refresh(dp, BLACK);
+        if (ok && Net->material)
+        {
+            int removed = 0;
+            for (int k = 0; k < dp.count; ++k)
+                removed += (dp.to[k] == SQ_NONE) - (dp.from[k] == SQ_NONE);
+            const int now = popcount(pos.pieces());
+            ok = material_bucket(now) == material_bucket(now + removed);
+        }
+        if (ok)
+        {
+            const FtW* subs[COLOR_NB][3];
+            const FtW* adds[COLOR_NB][3];
+            int        ns = 0, na = 0;
+            for (Color c : {WHITE, BLACK})
+            {
+                const PerspInfo pi = persp_info_pos(c, pos, st->kingSq[c]);
+                ns = na = 0;
+                for (int i = 0; i < dp.count; ++i)
+                {
+                    if (dp.from[i] != SQ_NONE)
+                        subs[c][ns++] = weights_of(feature_index(c, dp.piece[i], dp.from[i], pi));
+                    if (dp.to[i] != SQ_NONE)
+                        adds[c][na++] = weights_of(feature_index(c, dp.piece[i], dp.to[i], pi));
+                }
+            }
+            const int cas = ns * 4 + na;
+            if (cas == 1 * 4 + 1 || cas == 2 * 4 + 1 || cas == 2 * 4 + 2)
+            {
+                const int           bucket = current_bucket(pos);
+                const Color         stm    = pos.side_to_move();
+                const std::int16_t* w      = Net->outputWeights + std::size_t(bucket) * 2 * HIDDEN_SIZE;
+                Accumulator&        dst    = pos.accumulator(st->accIndex);
+                const Accumulator&  src    = pos.accumulator(st->previous->accIndex);
+                std::int64_t        sum    = 0;
+                for (Color c : {WHITE, BLACK})
+                {
+                    const std::int16_t* wc = w + (c == stm ? 0 : HIDDEN_SIZE);
+                    sum += cas == 1 * 4 + 1 ? maj_sortie<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc)
+                         : cas == 2 * 4 + 1 ? maj_sortie<2, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc)
+                                            : maj_sortie<2, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc);
+                }
+                st->accGen   = NetGen;
+                const int cp = int((sum + Net->outputBias[bucket]) * SCALE / (QA * QB));
+                return Value(std::clamp(cp, -12000, 12000));
+            }
+        }
+    }
+#endif
 
     if (st->accGen != NetGen)
     {
