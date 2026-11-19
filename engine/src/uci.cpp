@@ -192,6 +192,13 @@ void cmd_go(Position& pos, std::istringstream& in, StateListPtr& etats) {
         else if (mot == "infinite")   lim.infinite = 1;
         else if (mot == "ponder")     lim.ponderMode = true;
     }
+    // « go perft N » (commande courante des testeurs) : comptage, pas de recherche
+    // (avant le 19-11, la valeur etait lue puis ignoree : recherche sans fin)
+    if (lim.perft)
+    {
+        perft_divide(pos, Depth(lim.perft));
+        return;
+    }
     Time.init(lim, pos.side_to_move(), pos.game_ply(), int(Options["Move Overhead"]), popcount(pos.pieces()));
     TT.new_search();
     Search::Ponder          = lim.ponderMode;

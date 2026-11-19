@@ -82,6 +82,7 @@
     X(RfpTension,                     0,     0,   100) \
     X(IidMin,                         0,     0,    20) \
     X(IidRed,                         3,     1,     8) \
+    X(TtRajeunir,                     1,     0,     1) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \

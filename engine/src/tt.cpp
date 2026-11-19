@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "prof.h"
+#include "tune.h"
 
 namespace one {
 
@@ -109,7 +110,10 @@ TTEntry* TranspositionTable::probe(Key cle, bool& trouvee) const {
     for (int i = 0; i < 3; ++i)
         if (f[i].cle16 == c16 || f[i].prof == 0)
         {
-            f[i].infos = std::uint8_t(age | (f[i].infos & 7));
+            // TtRajeunir (en test, 19-11) : 0 = l'age ne change qu'a l'ecriture, comme
+            // Stockfish 19 ; plus de ligne de cache salie a chaque sonde
+            if (Tune::TtRajeunir)
+                f[i].infos = std::uint8_t(age | (f[i].infos & 7));
             trouvee    = f[i].prof != 0;
             return &f[i];
         }
