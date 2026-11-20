@@ -60,8 +60,11 @@ void TimeManagement::init(Search::LimitsType& lim, Color moi, int ply, int marge
     }
     else
     {
-        partCible   = std::min((0.88 + ply / 116.4) / aJouer, 0.88 * reste / double(dispo));
-        multPlafond = std::min(6.3, 1.5 + 0.11 * aJouer);
+        // Cadence repetee (CCRL 40/15) ; constantes reglables depuis le 20-11
+        // (valeurs de depart : 0,88 ; 116,4 ; 0,88 ; 6,3 ; 1,5 ; 0,11)
+        partCible   = std::min((Tune::TmMtgBase / 1000.0 + ply / (Tune::TmMtgPly / 10.0)) / aJouer,
+                               Tune::TmMtgCap / 1000.0 * reste / double(dispo));
+        multPlafond = std::min(Tune::TmMtgPlafMax / 10.0, Tune::TmMtgPlafBase / 10.0 + Tune::TmMtgPlafPente / 1000.0 * aJouer);
     }
 
     // En retard a la pendule, on joue un peu plus vite (TmClockPct, eteint par defaut)
@@ -72,7 +75,7 @@ void TimeManagement::init(Search::LimitsType& lim, Color moi, int ply, int marge
     }
 
     cible   = std::max<TimePoint>(TimePoint(partCible * double(dispo)), 1);
-    plafond = std::max<TimePoint>(TimePoint(std::min(0.84 * reste - marge, multPlafond * double(TimePoint(partCible * double(dispo))))), 1);
+    plafond = std::max<TimePoint>(TimePoint(std::min(Tune::TmPlafReste / 1000.0 * reste - marge, multPlafond * double(TimePoint(partCible * double(dispo))))), 1);
 }
 
 }  // namespace one

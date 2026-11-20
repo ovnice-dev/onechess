@@ -83,6 +83,13 @@
     X(IidMin,                         0,     0,    20) \
     X(IidRed,                         3,     1,     8) \
     X(TtRajeunir,                     1,     0,     1) \
+    X(TmMtgBase,                    880,   400,  1600) \
+    X(TmMtgPly,                    1164,   300,  4000) \
+    X(TmMtgCap,                     880,   400,   990) \
+    X(TmMtgPlafMax,                  63,    20,   120) \
+    X(TmMtgPlafBase,                 15,     5,    40) \
+    X(TmMtgPlafPente,               110,    30,   300) \
+    X(TmPlafReste,                  840,   500,   950) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \
