@@ -97,28 +97,28 @@
     X(OrdSuite2,                      8,     0,    32) \
     X(OrdSuite3,                      8,     0,    32) \
     X(OrdSuite4,                      8,     0,    32) \
-    X(OrdSuite6,                      8,     0,    32) \
+    X(OrdSuite6,                      7,     0,    32) \
     X(OrdPions,                       8,     0,    32) \
-    X(OrdEchec,                   16384,     0, 32768) \
-    X(EcartMin,                     189,    50,   400) \
-    X(EcartMax,                     194,    50,   400) \
-    X(EcartDecal,                    60,     0,   200) \
+    X(OrdEchec,                   16578,     0, 32768) \
+    X(EcartMin,                     186,    50,   400) \
+    X(EcartMax,                     197,    50,   400) \
+    X(EcartDecal,                    53,     0,   200) \
     X(EcartPrincipal,                11,     0,    30) \
     X(EcartPions,                    13,     0,    30) \
-    X(ReculMarge,                   166,    50,   400) \
-    X(RfpStatDiv,                   300,   100,  1000) \
+    X(ReculMarge,                   165,    50,   400) \
+    X(RfpStatDiv,                   303,   100,  1000) \
     X(NmpVerifProf,                  14,     8,    20) \
-    X(ProbcutProgres,                64,     0,   150) \
+    X(ProbcutProgres,                65,     0,   150) \
     X(PriseFutProf,                   8,     4,    12) \
-    X(PriseFutBase,                 234,   100,   400) \
-    X(PriseFutPente,                247,   100,   400) \
-    X(PriseFutHist,                 134,     0,   300) \
-    X(FutHistDiv,                   200,    50,   600) \
-    X(NoteStatDecal,               3800,     0,  8000) \
-    X(BonusApresLmr,               1334,   400,  3000) \
+    X(PriseFutBase,                 239,   100,   400) \
+    X(PriseFutPente,                249,   100,   400) \
+    X(PriseFutHist,                 132,     0,   300) \
+    X(FutHistDiv,                   197,    50,   600) \
+    X(NoteStatDecal,               3755,     0,  8000) \
+    X(BonusApresLmr,               1377,   400,  3000) \
     X(EchecExtProf,                   8,     4,    14) \
     X(PriseHistDiv,                  16,     4,    48) \
-    X(TriPlancher,                 3000,  1000,  6000) \
+    X(TriPlancher,                 3037,  1000,  6000) \
                                                        \
     X(TmStablePct,                  110,    50,   300) \
     X(TmChangedPct,                 170,    50,   300) \
