@@ -723,14 +723,47 @@ static std::string exe_dir() {
     return k == std::string::npos ? std::string() : p.substr(0, k + 1);
 }
 
+static bool charger(std::istream& f, const std::string& path);
+
+// Reseau integre a l'executable (22-11, revue externe) : sans « onechess.nnue » a cote, le moteur
+// jouait en PSQT. Compile avec -DONE_RESEAU=\"chemin/du/reseau.nnue\" (directive .incbin de l'assembleur,
+// ecrite pour Onechess) ; sans cette macro, rien n'est integre.
+#if defined(ONE_RESEAU)
+extern "C" const unsigned char one_reseau_debut[], one_reseau_fin[];
+__asm__(".section .rodata\n"
+        ".balign 64\n"
+        ".globl one_reseau_debut\n"
+        "one_reseau_debut:\n"
+        ".incbin \"" ONE_RESEAU "\"\n"
+        ".globl one_reseau_fin\n"
+        "one_reseau_fin:\n"
+        ".byte 0\n"
+        ".text\n");
+bool has_embedded() { return one_reseau_fin > one_reseau_debut; }
+#else
+bool has_embedded() { return false; }
+#endif
+
 bool load(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     // chemin relatif introuvable dans le dossier courant : a cote de l'executable
     if (!f && !path.empty() && path[0] != '/' && path[0] != char(92) && path.find(':') == std::string::npos)
         f.open(exe_dir() + path, std::ios::binary);
-    if (!f)
-        return false;
+    if (f)
+        return charger(f, path);
+#if defined(ONE_RESEAU)
+    // nom par defaut introuvable : le reseau integre (un autre nom introuvable reste une erreur)
+    if (path == "onechess.nnue" && has_embedded())
+    {
+        std::istringstream s(std::string(reinterpret_cast<const char*>(one_reseau_debut),
+                                         std::size_t(one_reseau_fin - one_reseau_debut)));
+        return charger(s, "(reseau integre)");
+    }
+#endif
+    return false;
+}
 
+static bool charger(std::istream& f, const std::string& path) {
     std::uint32_t magic = 0, hidden = 0, nBuckets = 0, mirror = 0, outBuckets = 0;
     f.read(reinterpret_cast<char*>(&magic), 4);
     f.read(reinterpret_cast<char*>(&hidden), 4);

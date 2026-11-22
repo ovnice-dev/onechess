@@ -307,7 +307,7 @@ void UCI::init(OptionsMap& o) {
         else if (NNUE::load(chemin))
             std::cout << "info string " << NNUE::info() << std::endl;
         else
-            std::cout << "info string reseau introuvable ou invalide : " << chemin << " (evaluation PSQT conservee)"
+            std::cout << "info string reseau introuvable ou invalide : " << chemin << " (reseau precedent conserve)"
                       << std::endl;
     });
     o["Ponder"] << Option(false);

@@ -105,6 +105,7 @@ struct PerspInfo {
 };
 
 bool          load(const std::string& path);
+bool          has_embedded();  // reseau integre a l'executable (compilation avec ONE_RESEAU)
 bool          loaded();
 void          unload();
 std::string   info();
