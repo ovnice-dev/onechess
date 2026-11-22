@@ -96,6 +96,13 @@ extern Value RootTbScore;
 // Pendant « go ponder », pas d'arret de soi-meme : une decision d'arret attend
 // le « ponderhit ». Active : une recherche lancee par « go » n'a pas rendu son coup.
 extern std::atomic<bool> Ponder, StopOnPonderhit, Active;
+// Reglages des tables de finales, recopies des options a chaque « go » (22-11 : lire les options
+// a chaque noeud coutait 31 % de vitesse des que des tables etaient chargees). limite = 0 : jamais de sonde.
+struct ReglagesTb {
+    int  limite = 0, profondeur = 1;
+    bool regle50 = true;
+};
+extern ReglagesTb Tb;
 
 void init();  // tables qui dependent des constantes reglables
 

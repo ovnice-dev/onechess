@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -213,6 +214,8 @@ void cmd_bench(std::istringstream& in) {
     int prof = 13;
     in >> prof;
     Prof::reset();
+    Search::Ponder          = false;  // un « stop » apres « go ponder » le laissait a vrai : bench bloque
+    Search::StopOnPonderhit = false;
 
     std::uint64_t                       noeuds = 0;
     std::chrono::steady_clock::duration duree{};
@@ -270,8 +273,8 @@ void lancer_chien_de_garde() {
                               && Search::Limits.use_time_management() && !Threads.stop;
             if (auTemps && Time.elapsed() > Time.maximum() + 1000)
             {
-                std::cout << "info string chien de garde : arret force a " << Time.elapsed() << " ms (maximum "
-                          << Time.maximum() << ")" << std::endl;
+                UCI::sortie("info string chien de garde : arret force a " + std::to_string(Time.elapsed())
+                            + " ms (maximum " + std::to_string(Time.maximum()) + ")");
                 Threads.stop = true;
             }
         }
@@ -420,6 +423,12 @@ std::ostream& operator<<(std::ostream& os, const UCI::OptionsMap& options) {
 // ================================================================ ecritures
 std::string UCI::square(Square s) { return {char('a' + file_of(s)), char('1' + rank_of(s))}; }
 
+void UCI::sortie(const std::string& ligne) {
+    static std::mutex verrou;
+    const std::lock_guard<std::mutex> garde(verrou);
+    std::cout << ligne << std::endl;
+}
+
 std::string UCI::move(Move m, bool chess960) {
     if (!m)
         return "(none)";
@@ -554,7 +563,7 @@ void UCI::loop(int argc, char* argv[]) {
         else if (cmd == "uci")
             std::cout << "id name " << engine_info() << "\nid author ovnice" << Options << "\nuciok" << std::endl;
         else if (cmd == "isready")
-            std::cout << "readyok" << std::endl;
+            UCI::sortie("readyok");
         else if (cmd == "setoption")
             cmd_setoption(in);
         else if (cmd == "ucinewgame")
@@ -570,8 +579,8 @@ void UCI::loop(int argc, char* argv[]) {
             Search::Ponder = false;
             if (Search::StopOnPonderhit)
                 Threads.stop = true;
-            std::cout << "info string ponderhit : " << Time.elapsed() << " ms ecoulees, optimum " << Time.optimum()
-                      << ", maximum " << Time.maximum() << std::endl;
+            UCI::sortie("info string ponderhit : " + std::to_string(Time.elapsed()) + " ms ecoulees, optimum "
+                        + std::to_string(Time.optimum()) + ", maximum " + std::to_string(Time.maximum()));
         }
         else if (cmd == "position")
             cmd_position(pos, in, etats);

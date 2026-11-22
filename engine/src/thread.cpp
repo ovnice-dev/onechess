@@ -142,6 +142,8 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& etats, const Search
     // tous les fils), choisi en respectant la regle des 50 coups. Le score
     // annonce ne sert qu'a l'affichage.
     Search::RootTbScore = VALUE_NONE;
+    Search::Tb          = {Syzygy::max_pieces() ? std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"])) : 0,
+                           int(Options["SyzygyProbeDepth"]), bool(Options["Syzygy50MoveRule"])};
     const int pieces    = popcount(pos.pieces());
     if (Syzygy::max_pieces() && pieces <= std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"])))
     {
@@ -160,7 +162,7 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& etats, const Search
 
     // L'historique de la partie reste vivant pour les repetitions
     if (etats)
-        historique = std::move(etats);
+        historique = etats;  // partage (et non transfert) : l'interface garde le sien
 
     // Chaque fil part de sa copie de la position. set() efface l'etat (et sa
     // chaine vers les coups precedents) : on recopie donc ensuite le dernier

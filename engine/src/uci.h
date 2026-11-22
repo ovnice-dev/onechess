@@ -81,7 +81,10 @@ void loop(int argc, char* argv[]);
 std::string value(Value v);                // « cp 34 » ou « mate 5 »
 std::string wdl(Value v);                  // « wdl g n p » (pour mille)
 std::string square(Square s);              // « e4 »
-std::string move(Move m, bool chess960);   // « e2e4 », « e7e8q », roque selon la variante
+std::string move(Move m, bool chess960);
+// Ecrit une ligne entiere sous verrou (22-11) : recherche, interface et chien de garde ecrivent en
+// meme temps ; une ligne « bestmove » coupee par une autre serait lue comme un coup illegal.
+void sortie(const std::string& ligne);   // « e2e4 », « e7e8q », roque selon la variante
 std::string pv(const Thread& th, Depth depth);
 Move        to_move(const Position& pos, std::string& texte);
 

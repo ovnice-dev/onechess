@@ -64,7 +64,12 @@ void TimeManagement::init(Search::LimitsType& lim, Color moi, int ply, int marge
     {
         // Cadence repetee (CCRL 40/15) ; constantes reglables depuis le 20-11
         // (valeurs de depart : 0,88 ; 116,4 ; 0,88 ; 6,3 ; 1,5 ; 0,11)
-        partCible   = std::min((Tune::TmMtgBase / 1000.0 + ply / (Tune::TmMtgPly / 10.0)) / aJouer,
+        // TmCtrlPly (revue du 22-11, en test) : compter les demi-coups depuis le debut du controle
+        // en cours ; avec le demi-coup de la partie, le debut des 2e et 3e controles prenait 2 a 3 fois
+        // la moyenne et la fin n'avait presque plus rien (6 puis 2 s par coup en 40/15).
+        tailleControle = std::max(tailleControle, lim.movestogo);
+        const int plyM = Tune::TmCtrlPly ? 2 * (tailleControle - lim.movestogo) + (moi == BLACK) : ply;
+        partCible   = std::min((Tune::TmMtgBase / 1000.0 + plyM / (Tune::TmMtgPly / 10.0)) / aJouer,
                                Tune::TmMtgCap / 1000.0 * reste / double(dispo));
         multPlafond = std::min(Tune::TmMtgPlafMax / 10.0, Tune::TmMtgPlafBase / 10.0 + Tune::TmMtgPlafPente / 1000.0 * aJouer);
     }

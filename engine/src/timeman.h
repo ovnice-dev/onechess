@@ -31,7 +31,8 @@ namespace one {
 class TimeManagement {
    public:
     void init(Search::LimitsType& limites, Color moi, int ply, int marge, int pieces = 32);
-    void new_game() {}
+    void new_game() { tailleControle = 0; }
+    int  tailleControle = 0;  // plus grand « movestogo » vu dans la partie (taille d'un controle)
 
     TimePoint optimum() const { return cible; }
     TimePoint maximum() const { return plafond; }

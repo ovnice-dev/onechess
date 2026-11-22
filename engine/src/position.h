@@ -86,7 +86,9 @@ struct StateInfo {
 
 // Historique de la partie reelle (garde vivant entre deux recherches pour
 // reconnaitre les repetitions).
-using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
+// Partage entre l'interface et la recherche (22-11) : un « bench » remplacait l'historique de la
+// recherche et detruisait celui sur lequel pointait encore la position de l'interface.
+using StateListPtr = std::shared_ptr<std::deque<StateInfo>>;
 
 class Position {
    public:

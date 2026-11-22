@@ -59,6 +59,7 @@ namespace Search {
 LimitsType        Limits;
 Value             RootTbScore = VALUE_NONE;
 std::atomic<bool> Ponder{false}, StopOnPonderhit{false}, Active{false};
+ReglagesTb        Tb;
 }  // namespace Search
 
 using namespace Search;
@@ -365,8 +366,8 @@ void Thread::iterative_deepening() {
         if (is_main())
         {
             if (!Limits.silent)
-                std::cout << "info depth 0 score " << UCI::value(rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW)
-                          << "\nbestmove (none)" << std::endl;
+                UCI::sortie("info depth 0 score " + UCI::value(rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW)
+                            + "\nbestmove (none)");
             Active = false;
         }
         return;
@@ -448,7 +449,7 @@ void Thread::iterative_deepening() {
 
         if (is_main())  // pas de ligne vide (certaines interfaces la refusent)
             if (const std::string l = UCI::pv(*this, rootDepth); !l.empty())
-                std::cout << l << std::endl;
+                UCI::sortie(l);
         if (Threads.stop)
             break;
 
@@ -533,10 +534,10 @@ void Thread::iterative_deepening() {
         rootPos.undo_move(ligne[0]);
     }
 
-    std::cout << "bestmove " << UCI::move(ligne[0], c960);
+    std::string bm = "bestmove " + UCI::move(ligne[0], c960);
     if (ligne.size() > 1)
-        std::cout << " ponder " << UCI::move(ligne[1], c960);
-    std::cout << std::endl;
+        bm += " ponder " + UCI::move(ligne[1], c960);
+    UCI::sortie(bm);
     Active = false;
 }
 
@@ -669,6 +670,8 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
         pos.do_move(m, etat, echec);
         const Value v = -quiescence<N>(pos, ss + 1, -beta, -alpha, d - 1);
         pos.undo_move(m);
+        if (Threads.stop.load(std::memory_order_relaxed))
+            return VALUE_ZERO;  // recherche interrompue : ni table, ni meilleur coup (revue du 22-11)
 
         if (v <= meilleure)
             continue;
@@ -766,12 +769,10 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     }
 
     // ------------------------------------------------ tables de finales
-    if (!racine && !exclu && Syzygy::max_pieces()
-        && popcount(pos.pieces()) <= std::min(Syzygy::max_pieces(), int(Options["SyzygyProbeLimit"]))
-        && d >= int(Options["SyzygyProbeDepth"]))
+    if (!racine && !exclu && popcount(pos.pieces()) <= Tb.limite && d >= Tb.profondeur)
     {
         Value vTb;
-        if (Syzygy::probe_wdl(pos, ss->ply, bool(Options["Syzygy50MoveRule"]), &vTb))
+        if (Syzygy::probe_wdl(pos, ss->ply, Tb.regle50, &vTb))
         {
             f->tbHits.fetch_add(1, std::memory_order_relaxed);
             fiche->save(cle, vers_table(vTb, ss->ply), ss->ttPv, BOUND_EXACT, std::min(d + 6, MAX_PLY - 1),
