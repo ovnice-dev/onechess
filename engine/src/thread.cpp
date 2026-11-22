@@ -40,8 +40,8 @@ Thread::Thread(std::size_t n, SharedHist* c) :
     correctionHistory(c ? c->correctionHistory : perso.correctionHistory),
     nonPawnCorrection(c ? c->nonPawnCorrection : perso.nonPawnCorrection),
     minorCorrection(c ? c->minorCorrection : perso.minorCorrection),
-    menaceCorrection(c ? c->menaceCorrection : perso.menaceCorrection),
     majorCorrection(c ? c->majorCorrection : perso.majorCorrection),
+    menaceCorrection(c ? c->menaceCorrection : perso.menaceCorrection),
     continuationHistory(c ? c->continuationHistory : perso.continuationHistory),
     numero(n),
     fil([this] { boucle(); }) {
