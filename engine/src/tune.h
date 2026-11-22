@@ -97,6 +97,7 @@
     X(TmSdPlafBase,                  40,    15,    80) \
     X(TmSdPlafPly,                  120,    40,   400) \
     X(TmCtrlPly,                      0,     0,     1) \
+    X(TtCopie,                        0,     0,     1) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \

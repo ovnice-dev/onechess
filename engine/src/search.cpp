@@ -748,6 +748,11 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     const bool  trouve  = ss->ttTrouve;
     const Value vTable  = trouve ? depuis_table(fiche->value(), ss->ply, pos.rule50_count()) : VALUE_NONE;
     Move        cTable  = racine ? f->rootMoves[f->pvIdx].pv[0] : trouve ? fiche->move() : Move::none();
+    // TtCopie (revue du 22-11, en test) : profondeur et borne copiees a la sonde ; relues plus tard
+    // (ProbCut, singularite), elles pouvaient venir d'une fiche reecrite entre-temps par une
+    // sous-recherche ou un autre fil, et ne plus aller avec vTable.
+    const Depth dSonde  = trouve ? fiche->depth() : DEPTH_NONE;
+    const Bound bSonde  = trouve ? fiche->bound() : BOUND_NONE;
     bool        priseTable = cTable && pos.capture_stage(cTable);
     if (!exclu)
         ss->ttPv = estPv || (trouve && fiche->is_pv());
@@ -889,7 +894,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         // reduite suffit (marge plus serree si la position progresse)
         const Value betaPc = beta + ProbcutMargin - ProbcutProgres * progresse;
         if (!estPv && !exclu && d >= ProbcutMinDepth && std::abs(beta) < VALUE_TB_WIN_IN_MAX_PLY
-            && !(trouve && fiche->depth() >= d - 3 && vTable != VALUE_NONE && vTable < betaPc))
+            && !(trouve && (TtCopie ? dSonde : fiche->depth()) >= d - 3 && vTable != VALUE_NONE && vTable < betaPc))
         {
             MovePicker tri(pos, cTable, betaPc - ss->evalStatique, &f->captureHistory);
             for (Move m; (m = tri.next_move());)
@@ -1022,7 +1027,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         // Singularite : le coup de table est-il le seul a tenir ? On cherche
         // sans lui, plus court ; si rien n'atteint la barre, il est prolonge.
         if (!racine && d >= SingularMinDepth && m == cTable && !exclu && std::abs(vTable) < VALUE_TB_WIN_IN_MAX_PLY
-            && (fiche->bound() & BOUND_LOWER) && fiche->depth() >= d - 3 && ss->ply < f->rootDepth * 2)
+            && ((TtCopie ? bSonde : fiche->bound()) & BOUND_LOWER) && (TtCopie ? dSonde : fiche->depth()) >= d - 3
+            && ss->ply < f->rootDepth * 2)
         {
             const Value barre = vTable - SingularBetaFactor * d / 16;
             ss->exclu         = m;
