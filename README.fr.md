@@ -17,20 +17,27 @@ l'exécutable et le réseau **dans le même dossier**.
 
 | Exécutable | Processeurs |
 |---|---|
-| `onechess-1.0-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants (**le plus rapide**) |
-| `onechess-1.0-avx2.exe` | AMD Zen 1 et Zen 2 |
-| `onechess-1.0-sse41.exe` | processeurs anciens sans AVX2 (lent) |
+| `onechess-1.2-avx512.exe` | processeurs Intel et AMD récents avec AVX-512 |
+| `onechess-1.2-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants |
+| `onechess-1.2-avx2.exe` | AMD Zen 1 et Zen 2 |
+| `onechess-1.2-sse41.exe` | processeurs anciens sans AVX2 (lent) |
+| `onechess-1.2-arm64-musl` | ARM 64 bits : téléphones et tablettes Android, Linux ARM (statique, NEON) |
 
 Tous jouent exactement les mêmes coups (même signature `bench`) ; seule la
-vitesse change. Dans le doute, essayer `bmi2` ; s'il ne démarre pas, `avx2`.
+vitesse change. Dans le doute, essayer `avx512`, puis `bmi2`, puis `avx2`, et
+garder le plus rapide qui démarre (comparer les `nps` de `bench`). Sur Android,
+si l'interface ne trouve pas le réseau, régler `EvalFile` sur le chemin complet
+de `onechess.nnue`.
 
 ## Force
 
 Onechess joue sur Lichess sous le nom [OnechessBot](https://lichess.org/@/OnechessBot).
-Notre propre estimation pour la version 1.0, d'après un tournoi de 1 500 parties
+Notre propre mesure pour la version 1.0, d'après un tournoi de 1 500 parties
 contre cinq moteurs notés autour de 3 600 (10+0,1, un cœur chacun) : **environ
-3 577 sur l'échelle CCRL 40/15 mono-cœur** (novembre 2026). Les résultats des
-listes officielles seront ajoutés ici dès leur publication.
+3 577 sur l'échelle CCRL 40/15 mono-cœur** (novembre 2026). La version 1.2 est
+environ 30 % plus rapide, avec une recherche re-réglée : notre estimation est
+**environ 3 590**. Les résultats des listes officielles seront ajoutés ici dès
+leur publication.
 
 ## Ce qu'il sait faire
 
@@ -41,7 +48,8 @@ négatives et d'échec ; historiques (papillon, prises, continuation, pions,
 menaces) ; historiques de correction de l'évaluation ; Lazy SMP à plusieurs fils.
 
 **Évaluation** : un réseau NNUE à 768 entrées pièce-case × 4 experts choisis par le
-matériel, 1024 neurones par camp, 4 sorties. Entraînée par l'auteur sur
+matériel, 1024 neurones par camp, 4 sorties, mises à jour incrémentales en
+AVX-512, AVX2 ou NEON. Entraînée par l'auteur sur
 1,77 milliard de positions d'autojeu public de Stockfish
 (`official-stockfish/master-binpacks`, ODbL), avec un entraîneur maison
 (PyTorch sur GPU, JAX sur TPU).
@@ -64,14 +72,19 @@ subite et le nombre de coups imposé ; ponder.
 | `UCI_ShowWDL` | probabilités victoire / nulle / défaite dans chaque ligne `info` |
 | `Debug Log File` | copie de tout le dialogue UCI dans un fichier |
 
-Autres commandes : `bench` (signature et vitesse), `eval`, `d`, `perft`.
+Autres commandes : `bench` (signature et vitesse), `eval`, `d`, `perft` (et `go perft N`).
 
 ## Compiler
 
 ```bash
 cd engine
-./build.sh pgo        # compilation guidée par profil, la plus rapide
+./build.sh clang      # Clang guidé par profil, le plus rapide
+./build.sh pgo        # la même chose avec GCC
 ```
+
+Sur ARM64 (Linux, Android avec un compilateur natif), depuis le dossier
+`engine` : `g++ -std=c++20 -O3 -DNDEBUG -DONE_FIGE -flto=auto -march=armv8-a
+-pthread -Ifathom src/*.cpp fathom/tbprobe.c -o onechess`.
 
 Un compilateur C++20 (GCC ou Clang) suffit. Vérifier avec `bench 12` : le
 nombre de nœuds doit être la signature donnée dans les notes de la version.
