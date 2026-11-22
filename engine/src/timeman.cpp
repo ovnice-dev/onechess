@@ -55,8 +55,10 @@ void TimeManagement::init(Search::LimitsType& lim, Color moi, int ply, int marge
     {
         // Mort subite : la part grandit avec la racine du numero de demi-coup
         // (le milieu de partie decide), bornee a 20 % du reste.
-        partCible   = std::min(0.0084 + std::pow(ply + 3.0, 0.5) * 0.0042, 0.20 * reste / double(dispo));
-        multPlafond = std::min(7.0, 4.0 + ply / 12.0);
+        // (reglables depuis le 22-11 ; valeurs de depart 0,0084 ; 0,0042 ; 0,20 ; 7 ; 4 ; 12)
+        partCible   = std::min(Tune::TmSdBase / 10000.0 + std::pow(ply + 3.0, 0.5) * (Tune::TmSdPente / 10000.0),
+                               Tune::TmSdCap / 1000.0 * reste / double(dispo));
+        multPlafond = std::min(Tune::TmSdPlafMax / 10.0, Tune::TmSdPlafBase / 10.0 + ply / (Tune::TmSdPlafPly / 10.0));
     }
     else
     {

@@ -90,6 +90,12 @@
     X(TmMtgPlafBase,                 15,     5,    40) \
     X(TmMtgPlafPente,               110,    30,   300) \
     X(TmPlafReste,                  840,   500,   950) \
+    X(TmSdBase,                      84,    20,   300) \
+    X(TmSdPente,                     42,    10,   150) \
+    X(TmSdCap,                      200,    80,   400) \
+    X(TmSdPlafMax,                   70,    30,   120) \
+    X(TmSdPlafBase,                  40,    15,    80) \
+    X(TmSdPlafPly,                  120,    40,   400) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \
