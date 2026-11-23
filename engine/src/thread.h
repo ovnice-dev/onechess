@@ -69,7 +69,6 @@ class Thread {
     StateInfo         rootState;
     Search::RootMoves rootMoves;
     Depth             rootDepth = 0, completedDepth = 0;
-    Value             rootDelta = 0;
     int               selDepth = 0, nmpMinPly = 0;
     int               callsCnt = 0;  // noeuds avant de relire l'horloge
     std::size_t       pvIdx    = 0;  // ligne MultiPV en cours

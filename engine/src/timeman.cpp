@@ -74,7 +74,7 @@ void TimeManagement::init(Search::LimitsType& lim, Color moi, int ply, int marge
         multPlafond = std::min(Tune::TmMtgPlafMax / 10.0, Tune::TmMtgPlafBase / 10.0 + Tune::TmMtgPlafPente / 1000.0 * aJouer);
     }
 
-    // En retard a la pendule, on joue un peu plus vite (TmClockPct, eteint par defaut)
+    // En retard a la pendule, on joue un peu plus vite (TmClockPct, 906 depuis SpsaTemps40T)
     if (Tune::TmClockPct && lim.movestogo != 1)
     {
         const double ecart = double(lim.time[moi] - lim.time[~moi]) / (1.0 + reste + double(lim.time[~moi]));

@@ -418,7 +418,6 @@ void Thread::iterative_deepening() {
             for (int echecsHauts = 0;;)
             {
                 // apres des echecs hauts repetes, un peu moins profond
-                rootDelta = beta - alpha;
                 meilleur  = chercher<RACINE>(rootPos, ss, alpha, beta, std::max(1, rootDepth - echecsHauts), false);
                 std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
                 if (Threads.stop)
