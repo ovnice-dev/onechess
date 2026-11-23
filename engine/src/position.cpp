@@ -343,10 +343,22 @@ void Position::calculer_echecs() {
     st->checkSquares[KING]   = 0;
 }
 
+// Cles des corrections « mineures » et « majeures » (23-11, revue externe : elles etaient
+// recalculees a chaque evaluation, ~8 % du temps) : le roi compte dans les deux.
+inline bool est_mineure(Piece p) { const PieceType t = type_of(p); return t == KNIGHT || t == BISHOP || t == KING; }
+inline bool est_majeure(Piece p) { const PieceType t = type_of(p); return t == ROOK || t == QUEEN || t == KING; }
+inline void cles_pieces(StateInfo* s, Piece p, Key dk) {
+    if (est_mineure(p))
+        s->minorKey ^= dk;
+    if (est_majeure(p))
+        s->majorKey ^= dk;
+}
+
 // Tout ce qu'on maintient ensuite coup par coup, calcule ici de zero.
 void Position::tout_recalculer() {
     st->key = st->pawnKey = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
+    st->minorKey = st->majorKey = 0;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = 0;
     st->checkersBB = attackers_to(square<KING>(trait)) & pieces(~trait);
     calculer_echecs();
@@ -361,6 +373,7 @@ void Position::tout_recalculer() {
         else
         {
             st->nonPawnKey[color_of(p)] ^= Z.piece[p][s];
+            cles_pieces(st, p, Z.piece[p][s]);
             st->nonPawnMaterial[color_of(p)] += piece_value(p);
         }
     }
@@ -561,6 +574,7 @@ void Position::do_move(Move m, StateInfo& nouveau, bool donneEchec) {
         const Key dk = Z.piece[pris][td] ^ Z.piece[pris][ta];
         k ^= dk;
         st->nonPawnKey[moi] ^= dk;
+        cles_pieces(st, pris, dk);
         pris = NO_PIECE;
     }
     else if (pris)
@@ -573,6 +587,7 @@ void Position::do_move(Move m, StateInfo& nouveau, bool donneEchec) {
         {
             st->nonPawnMaterial[lui] -= piece_value(pris);
             st->nonPawnKey[lui] ^= dk;
+            cles_pieces(st, pris, dk);
         }
         oter(ou);
         k ^= dk;
@@ -582,7 +597,10 @@ void Position::do_move(Move m, StateInfo& nouveau, bool donneEchec) {
     const Key dp = Z.piece[p][de] ^ Z.piece[p][a];
     k ^= dp;
     if (type_of(p) != PAWN)
+    {
         st->nonPawnKey[moi] ^= dp;
+        cles_pieces(st, p, dp);
+    }
 
     if (av.epSquare != SQ_NONE)
         k ^= Z.ep[file_of(av.epSquare)];
@@ -618,6 +636,7 @@ void Position::do_move(Move m, StateInfo& nouveau, bool donneEchec) {
             st->pawnKey ^= Z.piece[p][a];
             st->nonPawnMaterial[moi] += piece_value(neuve);
             st->nonPawnKey[moi] ^= Z.piece[neuve][a];
+            cles_pieces(st, neuve, Z.piece[neuve][a]);
         }
         st->pawnKey ^= Z.piece[p][de] ^ Z.piece[p][a];
         st->rule50 = 0;
@@ -846,12 +865,15 @@ bool Position::pos_is_ok() const {
                 return false;
     // Cles hors pions recalculees (une erreur ici fausserait en silence les corrections)
     Key np[COLOR_NB] = {0, 0};
+    StateInfo cl{};
     for (Bitboard b = pieces() & ~pieces(PAWN); b; )
     {
         const Square s = pop_lsb(b);
         np[color_of(piece_on(s))] ^= Z.piece[piece_on(s)][s];
+        cles_pieces(&cl, piece_on(s), Z.piece[piece_on(s)][s]);
     }
-    return np[WHITE] == st->nonPawnKey[WHITE] && np[BLACK] == st->nonPawnKey[BLACK];
+    return np[WHITE] == st->nonPawnKey[WHITE] && np[BLACK] == st->nonPawnKey[BLACK]
+        && cl.minorKey == st->minorKey && cl.majorKey == st->majorKey;
 #endif
 }
 

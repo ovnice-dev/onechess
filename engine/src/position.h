@@ -60,6 +60,7 @@ struct StateInfo {
     // --- recopie par do_move (jusqu'a epSquare exclu)
     Key   pawnKey;
     Key   nonPawnKey[COLOR_NB];        // pieces hors pions d'un camp, roi compris
+    Key   minorKey, majorKey;          // (23-11) cavaliers + fous + rois ; tours + dames + rois
     Value nonPawnMaterial[COLOR_NB];   // materiel hors pions et roi
     int   castlingRights;
     int   rule50;                      // demi-coups depuis une prise ou un pas de pion
@@ -171,6 +172,8 @@ class Position {
     Key        key_after_null() const;  // cle apres un coup nul (prechargement de la table)
     Key        pawn_key() const { return st->pawnKey; }
     Key        non_pawn_key(Color c) const { return st->nonPawnKey[c]; }
+    Key        minor_key() const { return st->minorKey; }
+    Key        major_key() const { return st->majorKey; }
     Value      non_pawn_material(Color c) const { return st->nonPawnMaterial[c]; }
     Value      non_pawn_material() const { return st->nonPawnMaterial[WHITE] + st->nonPawnMaterial[BLACK]; }
     int        rule50_count() const { return st->rule50; }

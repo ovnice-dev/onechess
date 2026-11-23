@@ -144,6 +144,12 @@ Key melange(Bitboard b, Key graine) {
     x     = (x ^ (x >> 27)) * 0x81dadef4bc2dd44dULL;
     return x ^ (x >> 33);
 }
+#if defined(ONE_CLES_INC)
+// 23-11 (en test, SprtClesInc) : tenues a jour coup par coup dans la position (cles de Zobrist),
+// au lieu de 12 melanges a chaque evaluation ; ~+1,5 % de vitesse, mais d'autres index de table
+Key cle_mineures(const Position& p) { return p.minor_key(); }
+Key cle_majeures(const Position& p) { return p.major_key(); }
+#else
 Key cle_mineures(const Position& p) {
     return melange(p.pieces(WHITE, KNIGHT), 0x11) ^ melange(p.pieces(BLACK, KNIGHT), 0x22)
          ^ melange(p.pieces(WHITE, BISHOP), 0x33) ^ melange(p.pieces(BLACK, BISHOP), 0x44)
@@ -154,6 +160,7 @@ Key cle_majeures(const Position& p) {
          ^ melange(p.pieces(WHITE, QUEEN), 0x99) ^ melange(p.pieces(BLACK, QUEEN), 0xaa)
          ^ melange(p.pieces(WHITE, KING), 0xbb) ^ melange(p.pieces(BLACK, KING), 0xcc);
 }
+#endif
 
 // Terme quadratique : c * |c| (les petites corrections restent petites)
 int carre_signe(int c) { return c * std::abs(c); }
@@ -198,6 +205,12 @@ void precharger_corrections(const Position& pos, const Thread* f, const Stack* s
     prefetch(&f->correctionHistory[moi][correction_index(pos.pawn_key())]);
     prefetch(&f->nonPawnCorrection[WHITE][moi][correction_index(pos.non_pawn_key(WHITE))]);
     prefetch(&f->nonPawnCorrection[BLACK][moi][correction_index(pos.non_pawn_key(BLACK))]);
+#if defined(ONE_CLES_INC)
+    if (CorrMinorWeight)
+        prefetch(&f->minorCorrection[moi][correction_index(pos.minor_key())]);
+    if (CorrMajorWeight)
+        prefetch(&f->majorCorrection[moi][correction_index(pos.major_key())]);
+#endif
     if (const Move m = (ss - 1)->coup; m.is_ok())
         prefetch(&(*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()]);
 }
@@ -666,7 +679,7 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
         ss->suite     = &f->continuationHistory[ss->enEchec][prise][p][m.to_sq()];
         ss->suiteCorr = &f->continuationCorrectionHistory[p][m.to_sq()];
         prefetch(TT.first_entry(pos.key_after(m)));
-        f->nodes.fetch_add(1, std::memory_order_relaxed);
+        f->nodes.store(f->nodes.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         pos.do_move(m, etat, echec);
         const Value v = -quiescence<N>(pos, ss + 1, -beta, -alpha, d - 1);
         pos.undo_move(m);
@@ -906,7 +919,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                 ss->coup      = m;
                 ss->suite     = &f->continuationHistory[ss->enEchec][true][p][m.to_sq()];
                 ss->suiteCorr = &f->continuationCorrectionHistory[p][m.to_sq()];
-                f->nodes.fetch_add(1, std::memory_order_relaxed);
+                f->nodes.store(f->nodes.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
                 pos.do_move(m, etat);
                 // quiescence d'abord ; recherche courte seulement si elle confirme
                 v                 = -quiescence<NON_PV>(pos, ss + 1, -betaPc, -betaPc + 1, 0);
@@ -1064,7 +1077,7 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 #endif
 
         const std::uint64_t noeudsAvant = racine ? f->nodes.load(std::memory_order_relaxed) : 0;
-        f->nodes.fetch_add(1, std::memory_order_relaxed);
+        f->nodes.store(f->nodes.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         pos.do_move(m, etat, echec);
 
         // ------------------------------------------------------------- LMR
@@ -1182,7 +1195,10 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     else if (meilleurCoup)
         apprendre_coupure(pos, ss, f, meilleurCoup, avantCase, tranquilles, nbTranq, prises, nbPrises, d);
     else if (!prisePrec && avantCase != SQ_NONE)  // rien n'a battu alpha : le coup d'avant etait bon
-        suites(ss - 1, pos.piece_on(avantCase), avantCase, bonus_stat(d) * (1 + (meilleure > beta)));
+        // (23-11) l'ancienne condition « meilleure > beta » ne pouvait jamais etre vraie ici : bonus
+        // double seulement si BonusEchecFort (en test) et que tous nos coups echouent nettement sous alpha
+        suites(ss - 1, pos.piece_on(avantCase), avantCase,
+               bonus_stat(d) * (1 + (BonusEchecFort && meilleure <= alpha - BonusEchecFort)));
 
     // CoupureAdoucie (en test) : hors PV, une coupure loin au-dessus de beta est
     // ramenee vers beta d'autant plus que la recherche etait courte
