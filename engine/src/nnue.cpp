@@ -507,6 +507,30 @@ inline std::int32_t maj_sortie(const std::int16_t* s, std::int16_t* d, const FtW
     }
     return hsum(sum);
 }
+
+// Meme passe pour un reseau a menaces completes (23-11) : les W premiers neurones recoivent en plus
+// le bloc des menaces (deja calcule) avant la CReLU ; l'accumulateur ecrit reste celui des pieces.
+template<int NS, int NA>
+inline std::int32_t maj_sortie_menaces(const std::int16_t* s, std::int16_t* d, const FtW* const* subs,
+                                       const FtW* const* adds, const std::int16_t* w, const std::int16_t* thr, int W) {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i qa   = _mm256_set1_epi16(QA);
+    __m256i       sum  = _mm256_setzero_si256();
+    for (int j = 0; j < HIDDEN_SIZE; j += 16)
+    {
+        __m256i v = _mm256_load_si256(reinterpret_cast<const __m256i*>(s + j));
+        for (int k = 0; k < NS; ++k)
+            v = _mm256_sub_epi16(v, FT_LOAD(subs[k] + j));
+        for (int k = 0; k < NA; ++k)
+            v = _mm256_add_epi16(v, FT_LOAD(adds[k] + j));
+        _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
+        if (j < W)
+            v = _mm256_add_epi16(v, _mm256_load_si256(reinterpret_cast<const __m256i*>(thr + j)));
+        const __m256i a = _mm256_min_epi16(_mm256_max_epi16(v, zero), qa);
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(a, _mm256_load_si256(reinterpret_cast<const __m256i*>(w + j))));
+    }
+    return hsum(sum);
+}
 #endif
 
 void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const PawnSets* ps) {
@@ -2217,7 +2241,7 @@ Value evaluate(const Position& pos) {
     // pas de changement d'expert ni de bucket, reseau simple (CReLU, sans
     // paires, menaces ni couches cachees) : mise a jour et sortie fusionnees.
     if (st->accGen != NetGen && st->previous && st->previous->accIndex >= 0 && st->previous->accGen == NetGen
-        && !Net->pairs && !Net->threats && !Net->fullThreats && !Net->l1 && Net->activation == ACT_CRELU)
+        && !Net->pairs && !Net->threats && !Net->l1 && Net->activation == ACT_CRELU)
     {
         const DirtyPiece& dp = st->dirtyPiece;
         bool              ok = dp.count > 0 && !requires_refresh(dp, WHITE) && !requires_refresh(dp, BLACK);
@@ -2255,6 +2279,19 @@ Value evaluate(const Position& pos) {
                 Accumulator&        dst    = pos.accumulator(st->accIndex);
                 const Accumulator&  src    = pos.accumulator(st->previous->accIndex);
                 std::int64_t        sum    = 0;
+                if (Net->fullThreats)   // 23-11 : les reseaux a menaces prennent aussi ce chemin
+                {
+                    const ThreatAcc& t = threat_acc(pos);
+                    const int        W = Net->ftWidth;
+                    for (Color c : {WHITE, BLACK})
+                    {
+                        const std::int16_t* wc = w + (c == stm ? 0 : HIDDEN_SIZE);
+                        sum += cas == 1 * 4 + 1 ? maj_sortie_menaces<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
+                             : cas == 2 * 4 + 1 ? maj_sortie_menaces<2, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
+                                                : maj_sortie_menaces<2, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W);
+                    }
+                }
+                else
                 for (Color c : {WHITE, BLACK})
                 {
                     const std::int16_t* wc = w + (c == stm ? 0 : HIDDEN_SIZE);
