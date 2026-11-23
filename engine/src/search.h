@@ -52,8 +52,6 @@ struct Stack {
     int                       coupures;     // coupures beta chez les fils
     int                       reduction;    // reduction LMR subie, lue par le fils
     Bitboard                  menaces;      // pour l'index de l'historique principal
-    int                       extDoubles;
-    int                       ecartCorr;    // |evaluation corrigee - brute|
 };
 
 // Un coup de la racine, sa variante principale et ses scores
@@ -72,6 +70,7 @@ struct RootMove {
     Value             averageScore  = -VALUE_INFINITE;
     std::uint64_t     effort        = 0;  // noeuds passes sous ce coup
     int               selDepth      = 0;
+    bool              borneBasse = false, borneHaute = false;  // score d'une fenetre depassee (affichage)
     std::vector<Move> pv;
 };
 using RootMoves = std::vector<RootMove>;

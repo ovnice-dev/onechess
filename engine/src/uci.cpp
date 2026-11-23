@@ -258,7 +258,7 @@ void cmd_setoption(std::istringstream& in) {
     if (it != Options.end())
         it->second = valeur;
     else
-        std::cout << "option inconnue: " << nom << std::endl;
+        std::cout << "info string option inconnue : " << nom << std::endl;
 }
 
 // Chien de garde (7-11) : une recherche au temps qui depasse son plafond
@@ -495,6 +495,8 @@ std::string UCI::pv(const Thread& th, Depth depth) {
         if (lignes > 1)
             out << " multipv " << i + 1;
         out << " score " << value(v);
+        if (neuf && v == rm.score)
+            out << (rm.borneBasse ? " lowerbound" : rm.borneHaute ? " upperbound" : "");
         if (bool(Options["UCI_ShowWDL"]) && std::abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
             out << wdl(v);
         out << " nodes " << noeuds << " nps " << noeuds * 1000 / ms << " hashfull " << TT.hashfull() << " tbhits "
@@ -607,7 +609,7 @@ void UCI::loop(int argc, char* argv[]) {
                       << r.repetition() << std::endl;
         }
         else if (!cmd.empty())
-            std::cout << "commande inconnue: " << cmd << std::endl;
+            std::cout << "info string commande inconnue : " << cmd << std::endl;
     }
 }
 

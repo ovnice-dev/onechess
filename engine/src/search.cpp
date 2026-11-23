@@ -528,6 +528,9 @@ void Thread::iterative_deepening() {
     }
 
     const Thread*     choix = Threads.best_thread();
+    if (choix != this)  // (23-11) le coup vient d'un autre fil : afficher SA ligne, pas celle du fil principal
+        if (const std::string l = UCI::pv(*choix, choix->completedDepth); !l.empty())
+            UCI::sortie(l);
     const auto&       ligne = choix->rootMoves[0].pv;
     const bool        c960  = rootPos.is_chess960();
 
@@ -572,6 +575,8 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
     {
         (ss + 1)->pv = pv;
         ss->pv[0]    = Move::none();
+        if (f->selDepth < ss->ply + 1)  // (23-11) profondeur selective comptee aussi ici
+            f->selDepth = ss->ply + 1;
     }
     ss->enEchec = pos.checkers();
     sonder_horloge(f);
@@ -726,7 +731,6 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
 
     ss->enEchec    = pos.checkers();
     ss->nbCoups    = 0;
-    ss->extDoubles = (ss - 1)->extDoubles;
     Value meilleure = -VALUE_INFINITE;
 
     sonder_horloge(f);
@@ -807,7 +811,6 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     if (ss->enEchec)
     {
         ss->evalStatique = VALUE_NONE;
-        ss->ecartCorr    = 0;
     }
     else
     {
@@ -818,7 +821,6 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             const bool dejaEvalue = trouve && fiche->eval() != VALUE_NONE;
             brute                 = dejaEvalue ? fiche->eval() : Eval::evaluate(pos);
             ss->evalStatique = eval = evaluation_corrigee(brute, f, pos, ss);
-            ss->ecartCorr           = std::abs(int(ss->evalStatique - brute));
             if (dejaEvalue)
             {
                 if (vTable != VALUE_NONE && (fiche->bound() & (vTable > eval ? BOUND_LOWER : BOUND_UPPER)))
@@ -989,6 +991,9 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             continue;
 
         ss->nbCoups = ++rang;
+        if (racine && f->is_main() && !Limits.silent && Time.elapsed() > 3000)
+            UCI::sortie("info depth " + std::to_string(d) + " currmove " + UCI::move(m, pos.is_chess960())
+                        + " currmovenumber " + std::to_string(rang + f->pvIdx));
 #ifdef PROFILE
         if (rang == 1)
             premierPrise = pos.capture_stage(m);
@@ -1067,7 +1072,6 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             extension = 1;
 
         nouvelle += extension;
-        ss->extDoubles = (ss - 1)->extDoubles + (extension >= 2);
 
         ss->coup      = m;
         ss->suite     = &f->continuationHistory[ss->enEchec][prise][p][a];
@@ -1135,8 +1139,10 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             rm.averageScore = rm.averageScore == -VALUE_INFINITE ? v : Value((2 * v + rm.averageScore) / 3);
             if (rang == 1 || v > alpha)
             {
-                rm.score    = v;
-                rm.selDepth = f->selDepth;
+                rm.score      = v;
+                rm.selDepth   = f->selDepth;
+                rm.borneBasse = v >= beta;
+                rm.borneHaute = v <= alpha;
                 rm.pv.resize(1);
                 for (const Move* q = (ss + 1)->pv; *q; ++q)
                     rm.pv.push_back(*q);

@@ -72,7 +72,6 @@ class Thread {
     Value             rootDelta = 0;
     int               selDepth = 0, nmpMinPly = 0;
     int               callsCnt = 0;  // noeuds avant de relire l'horloge
-    Color             nmpColor = WHITE;
     std::size_t       pvIdx    = 0;  // ligne MultiPV en cours
 
     std::atomic<std::uint64_t> nodes{0};
