@@ -129,15 +129,15 @@
     X(PriseHistDiv,                  16,     4,    48) \
     X(TriPlancher,                 3037,  1000,  6000) \
                                                        \
-    X(TmStablePct,                  110,    50,   300) \
-    X(TmChangedPct,                 170,    50,   300) \
+    X(TmStablePct,                  116,    50,   300) \
+    X(TmChangedPct,                 177,    50,   300) \
     X(TmFallPct,                      10,     0,    50) \
     X(TmSingleMs,                     300,     0,  1000) \
-    X(TmEffortPct,                600,     0,  1000) \
-    X(TmNoStartPct,              60,    30,   100) \
-    X(TmInstMul,                  250,     0,  1000) \
-    X(TmClockPct,                 900,     0,  1000) \
-    X(TmSurprisePct,                130,   100,   250) \
+    X(TmEffortPct,                608,     0,  1000) \
+    X(TmNoStartPct,              62,    30,   100) \
+    X(TmInstMul,                  261,     0,  1000) \
+    X(TmClockPct,                 906,     0,  1000) \
+    X(TmSurprisePct,                132,   100,   250) \
                                                        \
 
 namespace one {
