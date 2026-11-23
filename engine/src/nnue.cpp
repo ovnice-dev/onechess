@@ -1548,6 +1548,45 @@ inline Bitboard ft_attackers(Square z, Bitboard occ, const Bitboard* bt, const B
 
 bool FullThreatsOn = false;
 
+#if defined(__AVX2__)
+// (23-11) Bloc des menaces des deux perspectives, depuis zero, en une passe : toutes les lignes
+// de poids des deux camps sont demandees d'un coup (leurs defauts de cache se recouvrent), puis
+// sommees tuile par tuile dans les registres (ni zeros relus en memoire, ni copie des listes).
+void ft_somme2(const std::uint16_t* lw, int nw, const std::uint16_t* lb, int nb, std::int16_t* dw, std::int16_t* db) {
+    const int W = Net->ftWidth;
+    for (int k = 0; k < nw; ++k)
+        for (int j = 0; j < W; j += 64)
+            __builtin_prefetch(ft_row(lw[k]) + j);
+    for (int k = 0; k < nb; ++k)
+        for (int j = 0; j < W; j += 64)
+            __builtin_prefetch(ft_row(lb[k]) + j);
+    for (int cote = 0; cote < 2; ++cote)
+    {
+        const std::uint16_t* l = cote ? lb : lw;
+        const int            n = cote ? nb : nw;
+        std::int16_t*        d = cote ? db : dw;
+        for (int j = 0; j < W; j += 64)
+        {
+            __m256i v0 = _mm256_setzero_si256(), v1 = v0, v2 = v0, v3 = v0;
+            for (int k = 0; k < n; ++k)
+            {
+                const std::int8_t* r = ft_row(l[k]) + j;
+                const __m256i      w = _mm256_load_si256(reinterpret_cast<const __m256i*>(r));
+                const __m256i      x = _mm256_load_si256(reinterpret_cast<const __m256i*>(r + 32));
+                v0 = _mm256_add_epi16(v0, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(w)));
+                v1 = _mm256_add_epi16(v1, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(w, 1)));
+                v2 = _mm256_add_epi16(v2, _mm256_cvtepi8_epi16(_mm256_castsi256_si128(x)));
+                v3 = _mm256_add_epi16(v3, _mm256_cvtepi8_epi16(_mm256_extracti128_si256(x, 1)));
+            }
+            _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v0);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 16), v1);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 32), v2);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(d + j + 48), v3);
+        }
+    }
+}
+#endif
+
 // Appele a la fin de do_move et de do_null_move quand le reseau a des menaces
 // completes : menaces retirees et ajoutees par le coup. Seules peuvent changer
 // les menaces des pieces posees sur une case touchee (Z) et celles des pieces
@@ -1732,6 +1771,9 @@ const ThreatAcc& threat_acc(const Position& pos) {
 #else
         ft_lists(pos, lw, nw, lb, nbk);
 #endif
+#if defined(__AVX2__) && !defined(FT_APPLY_ANCIEN)
+        ft_somme2(lw, nw, lb, nbk, t.v[WHITE], t.v[BLACK]);
+#else
         int aw[FT_MAXK], ab[FT_MAXK];
         for (int k = 0; k < nw; ++k)
             aw[k] = lw[k];
@@ -1739,6 +1781,7 @@ const ThreatAcc& threat_acc(const Position& pos) {
             ab[k] = lb[k];
         ft_apply(FtZero, t.v[WHITE], nullptr, 0, aw, nw);
         ft_apply(FtZero, t.v[BLACK], nullptr, 0, ab, nbk);
+#endif
 #ifdef FT_TIME
         cyA += __rdtsc() - t1;
 #endif
