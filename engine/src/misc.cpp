@@ -36,7 +36,7 @@
 
 namespace one {
 
-std::string engine_info() { return "Onechess 1.2"; }
+std::string engine_info() { return "Onechess 1.2.1"; }
 
 // ================================================================ memoire
 #if defined(_WIN32)
