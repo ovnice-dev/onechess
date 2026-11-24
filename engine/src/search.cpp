@@ -560,6 +560,12 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
 
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
         return ss->ply >= MAX_PLY && !ss->enEchec ? Eval::evaluate(pos) : VALUE_DRAW;
+    if (UpRepSimple && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
+    {
+        alpha = VALUE_DRAW;
+        if (alpha >= beta)
+            return alpha;
+    }
     // L'arret doit etre entendu ici aussi (finales gagnees : arbres enormes)
     if (Threads.stop.load(std::memory_order_relaxed))
         return VALUE_ZERO;
@@ -722,6 +728,14 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
         beta  = std::min(mate_in(ss->ply + 1), beta);
         if (alpha >= beta)
             return alpha;
+        // UpRepSimple (24-11, revue, en test) : si un de nos coups ramene une position deja vue,
+        // la nulle est acquise : alpha monte a la nulle (version simple, sans bruit, cf. UpRepJ)
+        if (UpRepSimple && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
+        {
+            alpha = VALUE_DRAW;
+            if (alpha >= beta)
+                return alpha;
+        }
     }
 
     Move meilleurCoup                     = Move::none();

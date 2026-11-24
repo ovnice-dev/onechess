@@ -832,7 +832,13 @@ bool Position::upcoming_repetition(int ply) const {
             continue;
         if ((between_bb(r->from_sq(), r->to_sq()) ^ r->to_sq()) & pieces())
             continue;  // chemin occupe
-        if (ply > d || e->repetition)
+        if (ply > d)
+            return true;  // dans l'arbre : une seule repetition suffit
+        // (24-11, revue) avant la racine : le coup reversible doit etre a NOUS de le jouer
+        const Square s = piece_on(r->from_sq()) != NO_PIECE ? r->from_sq() : r->to_sq();
+        if (color_of(piece_on(s)) != trait)
+            continue;
+        if (e->repetition)
             return true;
     }
     return false;

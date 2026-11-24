@@ -99,6 +99,7 @@
     X(TmCtrlPly,                      0,     0,     1) \
     X(TtCopie,                        0,     0,     1) \
     X(BonusEchecFort,                 0,     0,   400) \
+    X(UpRepSimple,                    0,     0,     1) \
     X(LmrTension,                     0,     0,     8) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \
