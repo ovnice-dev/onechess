@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
+#include <memory>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -407,6 +408,112 @@ struct PawnSets {
     Bitboard after[COLOR_NB];
 };
 
+#ifndef ONE_PAIRES_SANS_SOMMES
+// Somme des lignes de paires d'une structure de pions (les deux perspectives),
+// gardee dans une petite table par fil, adressee par les pions des deux camps.
+// Un coup de pion ne lit plus ses lignes de paires (13 en moyenne pour les deux
+// vues, 2 Ko chacune) mais deux sommes par vue : -S(avant) + S(apres), dans le
+// noyau a nombre fixe de lignes. Arithmetique int16 modulo 2^16 : resultat
+// identique au bit pres (meme nombre de noeuds au bench).
+#ifndef ONE_PAIRES_SOMMES_BITS
+#define ONE_PAIRES_SOMMES_BITS 10   // 1024 entrees de 4 Ko : 4 Mo par fil
+#endif
+struct alignas(64) PairSum {
+    std::int16_t  v[COLOR_NB][HIDDEN_SIZE];
+    Bitboard      pw, pb;
+    std::uint32_t gen;
+};
+thread_local std::unique_ptr<PairSum[]> PsTab;   // liberee avec le fil (Threads change)
+
+inline std::size_t ps_slot(Bitboard pw, Bitboard pb) {
+    const std::uint64_t h = (pw * 0x9E3779B97F4A7C15ULL) ^ ((pb + 0x632BE59BD9B4E019ULL) * 0xC2B2AE3D27D4EB4FULL);
+    return std::size_t(h >> (64 - ONE_PAIRES_SOMMES_BITS));
+}
+
+// Une seule lecture de la variable du fil par coup (MinGW : chaque acces est un appel)
+inline PairSum* ps_table() {
+    PairSum* t = PsTab.get();
+    if (!t)
+    {
+        PsTab.reset(new PairSum[std::size_t(1) << ONE_PAIRES_SOMMES_BITS]);
+        t = PsTab.get();
+        for (std::size_t i = 0; i < (std::size_t(1) << ONE_PAIRES_SOMMES_BITS); ++i)
+            t[i].gen = 0;
+    }
+    return t;
+}
+
+inline bool ps_valid(const PairSum* e, Bitboard pw, Bitboard pb) {
+    return e->gen == NetGen && e->pw == pw && e->pb == pb;
+}
+
+// e = from - paires(fw, fb) + paires(pw, pb), from == nullptr : depuis zero
+void ps_fill(PairSum& e, const PairSum* from, Bitboard fw, Bitboard fb, Bitboard pw, Bitboard pb) {
+    for (Color p : {WHITE, BLACK})
+    {
+        int add[160], sub[160], na, ns = 0;
+        if (from)
+        {
+            na = collect_pairs(p, pw & ~fw, pb & ~fb, pw, pb, add);
+            ns = collect_pairs(p, fw & ~pw, fb & ~pb, fw, fb, sub);
+        }
+        else
+            na = collect_pairs(p, pw, pb, pw, pb, add);
+#if defined(__AVX2__)
+        for (int j = 0; j < HIDDEN_SIZE; j += 16)
+        {
+            __m256i v = from ? _mm256_load_si256(reinterpret_cast<const __m256i*>(from->v[p] + j))
+                             : _mm256_setzero_si256();
+            for (int k = 0; k < ns; ++k)
+                v = _mm256_sub_epi16(v, _mm256_load_si256(reinterpret_cast<const __m256i*>(pair_weights(sub[k]) + j)));
+            for (int k = 0; k < na; ++k)
+                v = _mm256_add_epi16(v, _mm256_load_si256(reinterpret_cast<const __m256i*>(pair_weights(add[k]) + j)));
+            _mm256_store_si256(reinterpret_cast<__m256i*>(e.v[p] + j), v);
+        }
+#else
+        for (int j = 0; j < HIDDEN_SIZE; ++j)
+        {
+            int v = from ? from->v[p][j] : 0;
+            for (int k = 0; k < ns; ++k)
+                v -= pair_weights(sub[k])[j];
+            for (int k = 0; k < na; ++k)
+                v += pair_weights(add[k])[j];
+            e.v[p][j] = std::int16_t(v);
+        }
+#endif
+    }
+    e.pw = pw, e.pb = pb, e.gen = NetGen;
+}
+
+// Sommes avant et apres un changement de pions ; false si les deux structures
+// tombent dans la meme case (on garde alors l'ancien chemin, ligne par ligne).
+bool ps_pair(const PawnSets& ps, const PairSum*& sb, const PairSum*& sa) {
+    PairSum* tab = ps_table();
+    PairSum* b   = &tab[ps_slot(ps.before[WHITE], ps.before[BLACK])];
+    PairSum* a   = &tab[ps_slot(ps.after[WHITE], ps.after[BLACK])];
+    if (a == b)
+    {
+        return false;
+    }
+    const bool vb = ps_valid(b, ps.before[WHITE], ps.before[BLACK]);
+    const bool va = ps_valid(a, ps.after[WHITE], ps.after[BLACK]);
+    if (!vb && !va)
+    {
+        ps_fill(*b, nullptr, 0, 0, ps.before[WHITE], ps.before[BLACK]);
+    }
+    if (!va)
+    {
+        ps_fill(*a, b, ps.before[WHITE], ps.before[BLACK], ps.after[WHITE], ps.after[BLACK]);
+    }
+    else if (!vb)
+    {
+        ps_fill(*b, a, ps.after[WHITE], ps.after[BLACK], ps.before[WHITE], ps.before[BLACK]);
+    }
+    sb = b, sa = a;
+    return true;
+}
+#endif
+
 // Le coup change-t-il le bucket ou le miroir de la perspective p ? Si oui,
 // toutes ses caracteristiques changent et un delta ne suffit plus.
 bool requires_refresh(const DirtyPiece& dp, Color p) {
@@ -568,6 +675,16 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
     const DirtyPiece&  dp  = si->dirtyPiece;
     Accumulator&       dst = pos.accumulator(si->accIndex);
     const Accumulator& src = pos.accumulator(si->previous->accIndex);
+#ifndef ONE_PAIRES_SANS_SOMMES
+    const PairSum* psB = nullptr;
+    const PairSum* psA = nullptr;
+    bool           psOk = false;
+    if (Net->pairs && ps && (doWhite || doBlack) && dp.count
+        && (ps->before[WHITE] != ps->after[WHITE] || ps->before[BLACK] != ps->after[BLACK]))
+    {
+        psOk = ps_pair(*ps, psB, psA);
+    }
+#endif
 
     for (Color p : {WHITE, BLACK})
     {
@@ -583,21 +700,42 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
         }
 
         const PerspInfo     pi = persp_info_pos(p, pos, si->kingSq[p]);
-        const FtW*          subs[3];
-        const FtW*          adds[3];
+        const FtW*          subs[4];
+        const FtW*          adds[4];
         int                 ns = 0, na = 0;
 
         // Paires de pions retirees et ajoutees par ce coup
-        int pSub[96], pAdd[96], nps = 0, npa = 0;
+        const std::int16_t* pSubW[96];
+        const std::int16_t* pAddW[96];
+        int nps = 0, npa = 0;
         if (Net->pairs && ps
             && (ps->before[WHITE] != ps->after[WHITE] || ps->before[BLACK] != ps->after[BLACK]))
         {
+#ifndef ONE_PAIRES_SANS_SOMMES
+            if (psOk)
+            {
+#ifndef ONE_FT_INT8
+                // deux lignes de plus parmi celles des pieces : noyau a nombre fixe (maj_fixe)
+                subs[ns++] = psB->v[p];
+                adds[na++] = psA->v[p];
+#else
+                pSubW[nps++] = psB->v[p];
+                pAddW[npa++] = psA->v[p];
+#endif
+            }
+            else
+#endif
+            {
+            int pSub[96], pAdd[96];
             npa = collect_pairs(p, ps->after[WHITE] & ~ps->before[WHITE],
                                 ps->after[BLACK] & ~ps->before[BLACK], ps->after[WHITE],
                                 ps->after[BLACK], pAdd);
             nps = collect_pairs(p, ps->before[WHITE] & ~ps->after[WHITE],
                                 ps->before[BLACK] & ~ps->after[BLACK], ps->before[WHITE],
                                 ps->before[BLACK], pSub);
+            for (int k = 0; k < npa; ++k) pAddW[k] = pair_weights(pAdd[k]);
+            for (int k = 0; k < nps; ++k) pSubW[k] = pair_weights(pSub[k]);
+            }
         }
 
         for (int i = 0; i < dp.count; ++i)
@@ -618,6 +756,7 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             if (cas == 1 * 4 + 1) { maj_fixe<1, 1>(s, d, subs, adds); continue; }
             if (cas == 2 * 4 + 1) { maj_fixe<2, 1>(s, d, subs, adds); continue; }
             if (cas == 2 * 4 + 2) { maj_fixe<2, 2>(s, d, subs, adds); continue; }
+            if (cas == 3 * 4 + 2) { maj_fixe<3, 2>(s, d, subs, adds); continue; }
         }
         for (int j = 0; j < HIDDEN_SIZE; j += 16)
         {
@@ -628,10 +767,10 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
                 v = _mm256_add_epi16(v, FT_LOAD(adds[k] + j));
             for (int k = 0; k < nps; ++k)
                 v = _mm256_sub_epi16(v, _mm256_load_si256(
-                                          reinterpret_cast<const __m256i*>(pair_weights(pSub[k]) + j)));
+                                          reinterpret_cast<const __m256i*>(pSubW[k] + j)));
             for (int k = 0; k < npa; ++k)
                 v = _mm256_add_epi16(v, _mm256_load_si256(
-                                          reinterpret_cast<const __m256i*>(pair_weights(pAdd[k]) + j)));
+                                          reinterpret_cast<const __m256i*>(pAddW[k] + j)));
             _mm256_store_si256(reinterpret_cast<__m256i*>(d + j), v);
         }
 #elif defined(ONE_NEON)
@@ -641,6 +780,7 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             if (cas == 1 * 4 + 1) { maj_fixe<1, 1>(s, d, subs, adds); continue; }
             if (cas == 2 * 4 + 1) { maj_fixe<2, 1>(s, d, subs, adds); continue; }
             if (cas == 2 * 4 + 2) { maj_fixe<2, 2>(s, d, subs, adds); continue; }
+            if (cas == 3 * 4 + 2) { maj_fixe<3, 2>(s, d, subs, adds); continue; }
         }
         for (int j = 0; j < HIDDEN_SIZE; j += 8)
         {
@@ -650,9 +790,9 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             for (int k = 0; k < na; ++k)
                 v = vaddq_s16(v, FT_LOADN(adds[k] + j));
             for (int k = 0; k < nps; ++k)
-                v = vsubq_s16(v, vld1q_s16(pair_weights(pSub[k]) + j));
+                v = vsubq_s16(v, vld1q_s16(pSubW[k] + j));
             for (int k = 0; k < npa; ++k)
-                v = vaddq_s16(v, vld1q_s16(pair_weights(pAdd[k]) + j));
+                v = vaddq_s16(v, vld1q_s16(pAddW[k] + j));
             vst1q_s16(d + j, v);
         }
 #else
@@ -664,9 +804,9 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             for (int k = 0; k < na; ++k)
                 v += adds[k][j];
             for (int k = 0; k < nps; ++k)
-                v -= pair_weights(pSub[k])[j];
+                v -= pSubW[k][j];
             for (int k = 0; k < npa; ++k)
-                v += pair_weights(pAdd[k])[j];
+                v += pAddW[k][j];
             d[j] = std::int16_t(v);
         }
 #endif
@@ -1299,6 +1439,8 @@ constexpr int FT_MAXK = 128;   // plus de menaces actives que jamais vu (48 sur 
 
 struct FtLuts {
     std::uint32_t lut1[12][12][2];
+    std::uint32_t lut1m[12][12][2];  // lut1[(a + 6) % 12][(d + 6) % 12] : vue des noirs, sans modulo
+    Bitboard      belowM[64];        // cases u telles que (u ^ 56) < (t ^ 56) : rang miroir
     std::uint16_t lut2[6][64][64];   // reference, sert a verifier ft_off()
     std::uint16_t base[6][64];       // depart de chaque (type, case) : 768 octets, toujours en cache
 };
@@ -1350,6 +1492,18 @@ void init_full_threats() {
         cumul += nv * cp;
     }
     assert(cumul == FULL_THREAT_DIM);
+    for (int a = 0; a < 12; ++a)
+        for (int d = 0; d < 12; ++d)
+            for (int k = 0; k < 2; ++k)
+                t->lut1m[a][d][k] = t->lut1[(a + 6) % 12][(d + 6) % 12][k];
+    for (int to = 0; to < 64; ++to)
+    {
+        Bitboard m = 0;
+        for (int u = 0; u < 64; ++u)
+            if ((u ^ 56) < (to ^ 56))
+                m |= Bitboard(1) << u;
+        t->belowM[to] = m;
+    }
     FtTab = t;
 #ifndef NDEBUG
     for (int pt = 0; pt < 6; ++pt)
@@ -1392,21 +1546,30 @@ void ft_lists(const Position& pos, std::uint16_t* w, int& nw, std::uint16_t* b, 
     // un pion blanc attaque une case si un pion noir pose sur cette case l'attaquerait en retour
     attaquants |= pos.pieces(WHITE, PAWN) & pawn_attacks_bb<BLACK>(cibles[WHITE][PAWN]);
     attaquants |= pos.pieces(BLACK, PAWN) & pawn_attacks_bb<WHITE>(cibles[BLACK][PAWN]);
+    // (variante) Par attaquant : ligne de lut1 des deux vues, depart et attaques sur echiquier
+    // vide une seule fois ; la vue des noirs reprend les memes attaques (symetrie verticale :
+    // A(f ^ 56) = miroir de A(f)), comptees sous le masque miroir belowM[to].
+    static constexpr std::uint8_t CODE[16] = {0, 0, 1, 2, 3, 4, 5, 0, 0, 6, 7, 8, 9, 10, 11, 0};
+    const FtLuts& L = *FtTab;
     for (Bitboard o = attaquants; o;)
     {
-        const Square   fr  = pop_lsb(o);
-        const Piece    pc  = pos.piece_on(fr);
-        const int      a   = ft_code(pc), ta = a % 6;
-        const Bitboard att = (ta == 0 ? pawn_attacks_bb(color_of(pc), fr) : attacks_bb(type_of(pc), fr, occ))
-                           & cibles[color_of(pc)][type_of(pc)];
+        const Square        fr  = pop_lsb(o);
+        const Piece         pc  = pos.piece_on(fr);
+        const PieceType     pt  = type_of(pc);
+        const int           a   = CODE[pc], ta = int(pt) - 1;
+        const int           f   = int(fr), fb = f ^ 56;
+        const Bitboard      e   = pt == PAWN ? pawn_attacks_bb(color_of(pc), fr) : empty_attacks_bb(pt, fr);
+        const Bitboard      att = (pt == PAWN ? e : attacks_bb(pt, fr, occ)) & cibles[color_of(pc)][pt];
+        const std::uint32_t bw = L.base[ta][f], bb = L.base[ta][fb];
+        const std::uint32_t(*lw)[2] = L.lut1[a];
+        const std::uint32_t(*lb)[2] = L.lut1m[a];
         for (Bitboard t = att; t;)
         {
             const Square        to = pop_lsb(t);
-            const int           d  = ft_code(pos.piece_on(to));
-            const int           f = int(fr), tt = int(to), fb = f ^ 56, tb = tt ^ 56;
-            const std::uint32_t iw = FtTab->lut1[a][d][f < tt] + ft_off(ta, f, tt);
-            const std::uint32_t ib =
-              FtTab->lut1[(a + 6) % 12][(d + 6) % 12][fb < tb] + ft_off(ta, fb, tb);
+            const int           d  = CODE[pos.piece_on(to)];
+            const int           tt = int(to);
+            const std::uint32_t iw = lw[d][f < tt] + bw + popcount(e & ((Bitboard(1) << tt) - 1));
+            const std::uint32_t ib = lb[d][fb < (tt ^ 56)] + bb + popcount(e & L.belowM[tt]);
             if (iw < std::uint32_t(FULL_THREAT_DIM) && nw < FT_MAXK)
                 w[nw++] = std::uint16_t(iw);
             if (ib < std::uint32_t(FULL_THREAT_DIM) && nb < FT_MAXK)
@@ -2264,6 +2427,13 @@ Value output(const Accumulator& acc, Color stm, int bucket) {
 // Evaluation paresseuse : on remonte jusqu'au dernier ancetre dont
 // l'accumulateur est valide, et on n'applique que les deltas necessaires.
 // Au-dela de quelques plis, repartir de zero coute moins cher.
+inline bool dirty_has_pawn(const DirtyPiece& dp) {
+    for (int k = 0; k < dp.count; ++k)
+        if (type_of(dp.piece[k]) == PAWN)
+            return true;
+    return false;
+}
+
 Value evaluate(const Position& pos) {
     StateInfo* st = pos.state();
 
@@ -2284,7 +2454,14 @@ Value evaluate(const Position& pos) {
     // pas de changement d'expert ni de bucket, reseau simple (CReLU, sans
     // paires, menaces ni couches cachees) : mise a jour et sortie fusionnees.
     if (st->accGen != NetGen && st->previous && st->previous->accIndex >= 0 && st->previous->accGen == NetGen
-        && !Net->pairs && !Net->threats && !Net->l1 && Net->activation == ACT_CRELU)
+        && !Net->threats && !Net->l1 && Net->activation == ACT_CRELU
+        // Reseau a paires : chemin fusionne aussi (coup sans pion : paires inchangees ;
+        // coup de pion : deux lignes de plus, -S(avant) + S(apres), si la table les a)
+#ifdef ONE_PAIRES_SANS_SOMMES
+        && (!Net->pairs || !dirty_has_pawn(st->dirtyPiece)))
+#else
+        )
+#endif
     {
         const DirtyPiece& dp = st->dirtyPiece;
         bool              ok = dp.count > 0 && !requires_refresh(dp, WHITE) && !requires_refresh(dp, BLACK);
@@ -2298,13 +2475,41 @@ Value evaluate(const Position& pos) {
         }
         if (ok)
         {
-            const FtW* subs[COLOR_NB][3];
-            const FtW* adds[COLOR_NB][3];
+            const FtW* subs[COLOR_NB][4];
+            const FtW* adds[COLOR_NB][4];
             int        ns = 0, na = 0;
+#ifndef ONE_PAIRES_SANS_SOMMES
+            const PairSum* fsb = nullptr;
+            const PairSum* fsa = nullptr;
+            if (Net->pairs && dirty_has_pawn(dp))
+            {
+                PawnSets ps1;
+                ps1.after[WHITE] = ps1.before[WHITE] = pos.pieces(WHITE, PAWN);
+                ps1.after[BLACK] = ps1.before[BLACK] = pos.pieces(BLACK, PAWN);
+                for (int k = 0; k < dp.count; ++k)
+                    if (type_of(dp.piece[k]) == PAWN)
+                    {
+                        const Color pc = color_of(dp.piece[k]);
+                        if (dp.to[k] != SQ_NONE)
+                            ps1.before[pc] &= ~(Bitboard(1) << dp.to[k]);
+                        if (dp.from[k] != SQ_NONE)
+                            ps1.before[pc] |= Bitboard(1) << dp.from[k];
+                    }
+                if (!ps_pair(ps1, fsb, fsa))
+                    goto pas_fusion;
+            }
+#endif
             for (Color c : {WHITE, BLACK})
             {
                 const PerspInfo pi = persp_info_pos(c, pos, st->kingSq[c]);
                 ns = na = 0;
+#ifndef ONE_PAIRES_SANS_SOMMES
+                if (fsb)
+                {
+                    subs[c][ns++] = fsb->v[c];
+                    adds[c][na++] = fsa->v[c];
+                }
+#endif
                 for (int i = 0; i < dp.count; ++i)
                 {
                     if (dp.from[i] != SQ_NONE)
@@ -2314,7 +2519,7 @@ Value evaluate(const Position& pos) {
                 }
             }
             const int cas = ns * 4 + na;
-            if (cas == 1 * 4 + 1 || cas == 2 * 4 + 1 || cas == 2 * 4 + 2)
+            if (cas == 1 * 4 + 1 || cas == 2 * 4 + 1 || cas == 2 * 4 + 2 || cas == 3 * 4 + 2)
             {
                 const int           bucket = current_bucket(pos);
                 const Color         stm    = pos.side_to_move();
@@ -2329,7 +2534,8 @@ Value evaluate(const Position& pos) {
                     for (Color c : {WHITE, BLACK})
                     {
                         const std::int16_t* wc = w + (c == stm ? 0 : HIDDEN_SIZE);
-                        sum += cas == 1 * 4 + 1 ? maj_sortie_menaces<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
+                        sum += cas == 3 * 4 + 2 ? maj_sortie_menaces<3, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
+                             : cas == 1 * 4 + 1 ? maj_sortie_menaces<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
                              : cas == 2 * 4 + 1 ? maj_sortie_menaces<2, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W)
                                                 : maj_sortie_menaces<2, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc, t.v[c], W);
                     }
@@ -2338,7 +2544,8 @@ Value evaluate(const Position& pos) {
                 for (Color c : {WHITE, BLACK})
                 {
                     const std::int16_t* wc = w + (c == stm ? 0 : HIDDEN_SIZE);
-                    sum += cas == 1 * 4 + 1 ? maj_sortie<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc)
+                    sum += cas == 3 * 4 + 2 ? maj_sortie<3, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc)
+                         : cas == 1 * 4 + 1 ? maj_sortie<1, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc)
                          : cas == 2 * 4 + 1 ? maj_sortie<2, 1>(src.v[c], dst.v[c], subs[c], adds[c], wc)
                                             : maj_sortie<2, 2>(src.v[c], dst.v[c], subs[c], adds[c], wc);
                 }
@@ -2348,6 +2555,9 @@ Value evaluate(const Position& pos) {
             }
         }
     }
+#ifndef ONE_PAIRES_SANS_SOMMES
+pas_fusion:
+#endif
 #endif
 
     if (st->accGen != NetGen)
