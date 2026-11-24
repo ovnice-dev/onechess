@@ -136,31 +136,10 @@ void nouvelle_pv(Move* pv, Move m, const Move* fils) {
 }
 
 // --------------------------------------------------- corrections d'evaluation
-// Cles des pieces mineures (cavaliers, fous, rois) et majeures (tours, dames,
-// rois), calculees a la volee : un melange par ensemble de cases.
-Key melange(Bitboard b, Key graine) {
-    Key x = b ^ graine;
-    x     = (x ^ (x >> 31)) * 0x7fb5d329728ea185ULL;
-    x     = (x ^ (x >> 27)) * 0x81dadef4bc2dd44dULL;
-    return x ^ (x >> 33);
-}
-#if defined(ONE_CLES_INC)
-// 23-11 (en test, SprtClesInc) : tenues a jour coup par coup dans la position (cles de Zobrist),
-// au lieu de 12 melanges a chaque evaluation ; ~+1,5 % de vitesse, mais d'autres index de table
+// Cles des corrections mineures / majeures, tenues coup par coup dans la position (cles de Zobrist ;
+// adopte le 24-11, ClesIncT H1 +3,1 : ~+1,5 % de vitesse, au lieu de 12 melanges par evaluation)
 Key cle_mineures(const Position& p) { return p.minor_key(); }
 Key cle_majeures(const Position& p) { return p.major_key(); }
-#else
-Key cle_mineures(const Position& p) {
-    return melange(p.pieces(WHITE, KNIGHT), 0x11) ^ melange(p.pieces(BLACK, KNIGHT), 0x22)
-         ^ melange(p.pieces(WHITE, BISHOP), 0x33) ^ melange(p.pieces(BLACK, BISHOP), 0x44)
-         ^ melange(p.pieces(WHITE, KING), 0x55) ^ melange(p.pieces(BLACK, KING), 0x66);
-}
-Key cle_majeures(const Position& p) {
-    return melange(p.pieces(WHITE, ROOK), 0x77) ^ melange(p.pieces(BLACK, ROOK), 0x88)
-         ^ melange(p.pieces(WHITE, QUEEN), 0x99) ^ melange(p.pieces(BLACK, QUEEN), 0xaa)
-         ^ melange(p.pieces(WHITE, KING), 0xbb) ^ melange(p.pieces(BLACK, KING), 0xcc);
-}
-#endif
 
 // Terme quadratique : c * |c| (les petites corrections restent petites)
 int carre_signe(int c) { return c * std::abs(c); }
@@ -205,12 +184,10 @@ void precharger_corrections(const Position& pos, const Thread* f, const Stack* s
     prefetch(&f->correctionHistory[moi][correction_index(pos.pawn_key())]);
     prefetch(&f->nonPawnCorrection[WHITE][moi][correction_index(pos.non_pawn_key(WHITE))]);
     prefetch(&f->nonPawnCorrection[BLACK][moi][correction_index(pos.non_pawn_key(BLACK))]);
-#if defined(ONE_CLES_INC)
     if (CorrMinorWeight)
         prefetch(&f->minorCorrection[moi][correction_index(pos.minor_key())]);
     if (CorrMajorWeight)
         prefetch(&f->majorCorrection[moi][correction_index(pos.major_key())]);
-#endif
     if (const Move m = (ss - 1)->coup; m.is_ok())
         prefetch(&(*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()]);
 }
