@@ -52,7 +52,7 @@ menaces) ; historiques de correction de l'évaluation ; Lazy SMP à plusieurs fi
 **Évaluation** : un réseau NNUE à 768 entrées pièce-case × 4 experts choisis par le
 matériel, 1024 neurones par camp, 4 sorties, mises à jour incrémentales en
 AVX-512, AVX2 ou NEON. Entraînée par l'auteur sur
-1,77 milliard de positions d'autojeu public de Stockfish
+plusieurs milliards de positions d'autojeu public de Stockfish
 (`official-stockfish/master-binpacks`, ODbL), avec un entraîneur maison
 (PyTorch sur GPU, JAX sur TPU).
 
@@ -67,7 +67,7 @@ subite et le nombre de coups imposé ; ponder.
 |---|---|
 | `Hash`, `Threads`, `Clear Hash` | table de transposition (Mo), fils de recherche |
 | `Move Overhead` | marge de temps par coup (ms), pour les interfaces lentes |
-| `EvalFile` | réseau NNUE (défaut `onechess.nnue`, cherché à côté de l'exécutable) |
+| `EvalFile` | fichier du réseau NNUE (défaut `onechess.nnue`, cherché à côté de l'exécutable ; absent, le réseau intégré est utilisé) |
 | `Ponder`, `UCI_Chess960` | réflexion sur le temps adverse, échecs aléatoires Fischer |
 | `SyzygyPath`, `SyzygyProbeDepth`, `SyzygyProbeLimit`, `Syzygy50MoveRule` | tables de finales Syzygy |
 | `MultiPV` | nombre de meilleures lignes affichées (analyse) |

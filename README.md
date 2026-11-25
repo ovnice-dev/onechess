@@ -51,7 +51,7 @@ continuation); Lazy SMP for several threads.
 **Evaluation**: an NNUE network with 768 piece-square inputs × 4 experts chosen by material,
 a 1024-neuron feature transformer per side, 4 output buckets, with incremental
 updates in AVX-512, AVX2 or NEON. Trained by its
-author on 1.77 billion positions of public Stockfish self-play data
+author on billions of positions of public Stockfish self-play data
 (`official-stockfish/master-binpacks`, ODbL), with an in-house trainer
 (PyTorch on GPU, JAX on TPU).
 
@@ -66,7 +66,7 @@ moves-to-go controls; ponder.
 |---|---|
 | `Hash`, `Threads`, `Clear Hash` | transposition table (MB), search threads |
 | `Move Overhead` | time margin per move (ms), for slow interfaces |
-| `EvalFile` | NNUE network (default `onechess.nnue`, looked up next to the executable) |
+| `EvalFile` | NNUE network file (default `onechess.nnue`, looked up next to the executable; if absent, the embedded network is used) |
 | `Ponder`, `UCI_Chess960` | thinking on the opponent's time, Fischer random chess |
 | `SyzygyPath`, `SyzygyProbeDepth`, `SyzygyProbeLimit`, `Syzygy50MoveRule` | Syzygy endgame tablebases |
 | `MultiPV` | number of best lines shown (analysis) |
