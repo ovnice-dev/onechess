@@ -151,26 +151,26 @@ Key cle_menaces(const Position& pos);
 Value evaluation_corrigee(Value v, const Thread* f, const Position& pos, const Stack* ss) {
     PROF_SCOPE(CORR);
     const Color moi = pos.side_to_move();
-    v += Value(CorrHistWeight * carre_signe(f->correctionHistory[moi][correction_index(pos.pawn_key())]) / CorrHistDiv);
+    v += Value(CorrHistWeight * carre_signe(f->correctionHistory[moi][correction_index(pos.pawn_key())]) / (CorrHistDiv * 64));
     if (CorrNpWeight)
     {
         const int b = f->nonPawnCorrection[WHITE][moi][correction_index(pos.non_pawn_key(WHITE))];
         const int n = f->nonPawnCorrection[BLACK][moi][correction_index(pos.non_pawn_key(BLACK))];
-        v += Value(CorrNpWeight * (carre_signe(b) + carre_signe(n)) / CorrHistDiv);
+        v += Value(CorrNpWeight * (carre_signe(b) + carre_signe(n)) / (CorrHistDiv * 64));
     }
     if (CorrMinorWeight)
         v += Value(CorrMinorWeight * carre_signe(f->minorCorrection[moi][correction_index(cle_mineures(pos))])
-                   / CorrHistDiv);
+                   / (CorrHistDiv * 64));
     if (CorrMajorWeight)
         v += Value(CorrMajorWeight * carre_signe(f->majorCorrection[moi][correction_index(cle_majeures(pos))])
-                   / CorrHistDiv);
+                   / (CorrHistDiv * 64));
     if (CorrMenaceWeight)
         v += Value(CorrMenaceWeight * carre_signe(f->menaceCorrection[moi][correction_index(cle_menaces(pos))])
-                   / CorrHistDiv);
+                   / (CorrHistDiv * 64));
     if (CorrContWeight)
         if (const Move m = (ss - 1)->coup; m.is_ok())
             v += Value(CorrContWeight * carre_signe((*(ss - 2)->suiteCorr)[pos.piece_on(m.to_sq())][m.to_sq()])
-                       / CorrHistDiv);
+                       / (CorrHistDiv * 64));
     // R50Div (en test) : plus la regle des 50 coups approche, plus l'evaluation
     // se rapproche de la nulle (un avantage qu'on ne concretise pas s'evapore)
     if (R50Div)

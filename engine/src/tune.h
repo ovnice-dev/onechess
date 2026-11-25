@@ -58,12 +58,12 @@
     X(QsFutilityMargin,             109,    50,   400) \
                                                        \
     X(CorrHistDiv,                  9281,  1024, 65536) \
-    X(CorrHistWeight,                 1,     1,     8) \
-    X(CorrNpWeight,                   1,     0,     8) \
-    X(CorrContWeight,                 1,     0,     8) \
-    X(CorrMinorWeight,                1,     0,     8) \
-    X(CorrMajorWeight,                1,     0,     8) \
-    X(CorrMenaceWeight,               0,     0,     8) \
+    X(CorrHistWeight,                64,    16,   192) \
+    X(CorrNpWeight,                  64,     0,   192) \
+    X(CorrContWeight,                64,     0,   192) \
+    X(CorrMinorWeight,               64,     0,   192) \
+    X(CorrMajorWeight,               64,     0,   192) \
+    X(CorrMenaceWeight,               0,     0,   192) \
     X(ThreatHist,                     1,     0,     1) \
     X(BadQuiets,                      13491,     0, 30000) \
     X(ContHist6,                      1,     0,     1) \
