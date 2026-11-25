@@ -90,12 +90,12 @@
     X(TmMtgPlafBase,                 15,     5,    40) \
     X(TmMtgPlafPente,               110,    30,   300) \
     X(TmPlafReste,                  840,   500,   950) \
-    X(TmSdBase,                      84,    20,   300) \
-    X(TmSdPente,                     42,    10,   150) \
-    X(TmSdCap,                      200,    80,   400) \
+    X(TmSdBase,                      91,    20,   300) \
+    X(TmSdPente,                     46,    10,   150) \
+    X(TmSdCap,                      198,    80,   400) \
     X(TmSdPlafMax,                   70,    30,   120) \
     X(TmSdPlafBase,                  40,    15,    80) \
-    X(TmSdPlafPly,                  120,    40,   400) \
+    X(TmSdPlafPly,                  117,    40,   400) \
     X(TmCtrlPly,                      0,     0,     1) \
     X(TtCopie,                        0,     0,     1) \
     X(BonusEchecFort,                 0,     0,   400) \
