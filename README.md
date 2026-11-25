@@ -11,22 +11,22 @@ can be used in any UCI interface (En Croissant, Cute Chess, Arena, Banksia…).
 ## Download
 
 Get the latest version from the [Releases](https://github.com/ovnice-dev/onechess/releases)
-page. Each release contains the executables and the network `onechess.nnue`:
-put the executable and the network **in the same folder**.
+page. Since version 1.2.1 the network is **embedded in every executable**: just
+run the executable, nothing else is needed. The network file `onechess.nnue` is
+still provided; if it is placed next to the executable (or set with `EvalFile`),
+it is used instead of the embedded one.
 
 | Executable | Processors |
 |---|---|
-| `onechess-1.2-avx512.exe` | recent Intel and AMD processors with AVX-512 |
-| `onechess-1.2-bmi2.exe` | Intel since Haswell (2013), AMD Zen 3 and later |
-| `onechess-1.2-avx2.exe` | AMD Zen 1 and Zen 2 |
-| `onechess-1.2-sse41.exe` | older processors without AVX2 (slow) |
-| `onechess-1.2-arm64-musl` | 64-bit ARM: Android phones and tablets, ARM Linux (static, NEON) |
+| `onechess-1.2.1-avx512.exe` | recent Intel and AMD processors with AVX-512 |
+| `onechess-1.2.1-bmi2.exe` | Intel since Haswell (2013), AMD Zen 3 and later |
+| `onechess-1.2.1-avx2.exe` | AMD Zen 1 and Zen 2 |
+| `onechess-1.2.1-sse41.exe` | older processors without AVX2 (slow) |
+| `onechess-1.2.1-arm64-musl` | 64-bit ARM: Android phones and tablets, ARM Linux (static, NEON) |
 
 All executables play exactly the same moves (same `bench` signature); only the
 speed differs. If unsure, try `avx512`, then `bmi2`, then `avx2`, and keep the
-fastest one that starts (compare the `nps` given by `bench`). On Android, if the
-interface does not find the network, set `EvalFile` to the full path of
-`onechess.nnue`.
+fastest one that starts (compare the `nps` given by `bench`).
 
 ## Strength
 
@@ -34,8 +34,10 @@ Onechess plays on Lichess as [OnechessBot](https://lichess.org/@/OnechessBot).
 Our own measurement for version 1.0, from a 1,500-game gauntlet against five engines
 rated around 3600 (10+0.1, one core each): **about 3577 on the CCRL 40/15
 single-core scale** (November 2026). Version 1.2 is about 30 % faster with a
-retuned search: our estimate is **about 3590**. Official rating lists results
-will be added here once published.
+retuned search: our estimate is **about 3590**. Version 1.2.1 adds a retuned time
+management, faster evaluation corrections, and no longer loses speed when Syzygy
+tablebases are loaded. Official rating lists results will be added here once
+published.
 
 ## Features
 

@@ -6,7 +6,7 @@ Thank you for your interest in Onechess!
 
 Open an issue with the bug report template. Please include:
 
-- the Onechess version (`uci` prints it) and the executable you use (`bmi2`, `avx2` or `sse41`);
+- the Onechess version (`uci` prints it) and the executable you use (`avx512`, `bmi2`, `avx2`, `sse41` or `arm64-musl`);
 - the output of `bench 12` (the node count is the signature of the engine);
 - the interface you use and, if possible, the position (FEN) and the UCI commands that show the problem.
 

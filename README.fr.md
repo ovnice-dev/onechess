@@ -12,22 +12,22 @@ Arena, Banksia…).
 ## Téléchargement
 
 La dernière version est sur la page [Releases](https://github.com/ovnice-dev/onechess/releases).
-Chaque version contient les exécutables et le réseau `onechess.nnue` : mettre
-l'exécutable et le réseau **dans le même dossier**.
+Depuis la version 1.2.1, le réseau est **intégré à chaque exécutable** : il
+suffit de lancer l'exécutable, rien d'autre n'est nécessaire. Le fichier
+`onechess.nnue` reste fourni ; s'il est placé à côté de l'exécutable (ou choisi
+avec `EvalFile`), il remplace le réseau intégré.
 
 | Exécutable | Processeurs |
 |---|---|
-| `onechess-1.2-avx512.exe` | processeurs Intel et AMD récents avec AVX-512 |
-| `onechess-1.2-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants |
-| `onechess-1.2-avx2.exe` | AMD Zen 1 et Zen 2 |
-| `onechess-1.2-sse41.exe` | processeurs anciens sans AVX2 (lent) |
-| `onechess-1.2-arm64-musl` | ARM 64 bits : téléphones et tablettes Android, Linux ARM (statique, NEON) |
+| `onechess-1.2.1-avx512.exe` | processeurs Intel et AMD récents avec AVX-512 |
+| `onechess-1.2.1-bmi2.exe` | Intel depuis Haswell (2013), AMD Zen 3 et suivants |
+| `onechess-1.2.1-avx2.exe` | AMD Zen 1 et Zen 2 |
+| `onechess-1.2.1-sse41.exe` | processeurs anciens sans AVX2 (lent) |
+| `onechess-1.2.1-arm64-musl` | ARM 64 bits : téléphones et tablettes Android, Linux ARM (statique, NEON) |
 
 Tous jouent exactement les mêmes coups (même signature `bench`) ; seule la
 vitesse change. Dans le doute, essayer `avx512`, puis `bmi2`, puis `avx2`, et
-garder le plus rapide qui démarre (comparer les `nps` de `bench`). Sur Android,
-si l'interface ne trouve pas le réseau, régler `EvalFile` sur le chemin complet
-de `onechess.nnue`.
+garder le plus rapide qui démarre (comparer les `nps` de `bench`).
 
 ## Force
 
@@ -36,8 +36,10 @@ Notre propre mesure pour la version 1.0, d'après un tournoi de 1 500 parties
 contre cinq moteurs notés autour de 3 600 (10+0,1, un cœur chacun) : **environ
 3 577 sur l'échelle CCRL 40/15 mono-cœur** (novembre 2026). La version 1.2 est
 environ 30 % plus rapide, avec une recherche re-réglée : notre estimation est
-**environ 3 590**. Les résultats des listes officielles seront ajoutés ici dès
-leur publication.
+**environ 3 590**. La version 1.2.1 ajoute une gestion du temps re-réglée, des
+corrections d'évaluation plus rapides, et ne perd plus de vitesse quand les
+tables Syzygy sont chargées. Les résultats des listes officielles seront ajoutés
+ici dès leur publication.
 
 ## Ce qu'il sait faire
 

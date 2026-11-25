@@ -10,7 +10,7 @@ labels: bug
 
 **How to reproduce** (position as FEN, UCI commands, time control)
 
-**Onechess version and executable** (`uci` output, `bmi2` / `avx2` / `sse41`)
+**Onechess version and executable** (`uci` output, `avx512` / `bmi2` / `avx2` / `sse41` / `arm64-musl`)
 
 **`bench 12` node count**
 
