@@ -57,6 +57,11 @@ struct Network {
     int           nBuckets = 0;
     bool          mirror   = false;
     bool          material = false;  // buckets d'entree choisis par le materiel (champ miroir = 2)
+    // (26-11) roi ET materiel (champ miroir = 3) : bucket = case du roi (avec miroir) x nMat + bande
+    // de materiel. Le fichier garde les deux parts separees (16 buckets du roi complets, puis nMat
+    // ecarts par bande) ; leur somme est faite une fois au chargement (nBuckets = 16 x nMat).
+    bool          combo    = false;
+    int           nMat     = 1;
     std::uint8_t  layout[64] = {};
 
     int           outBuckets = 1;
@@ -660,7 +665,7 @@ void apply(const Position& pos, StateInfo* si, bool doWhite, bool doBlack, const
             continue;
 
         (void) ps;
-        const PerspInfo pi = persp_info(p, si->kingSq[p]);
+        const PerspInfo pi = persp_info_pos(p, pos, si->kingSq[p]);
         std::int16_t*   a  = dst.v[p];
 
         for (int i = 0; i < dp.count; ++i)
@@ -833,7 +838,7 @@ std::string info() {
 
     std::ostringstream ss;
     ss << "NNUE " << Net->nBuckets << "x768x" << Net->hidden << "x2->"
-       << Net->outBuckets << (Net->mirror ? " miroir" : "") << (Net->material ? " experts-materiel" : "")
+       << Net->outBuckets << (Net->mirror ? " miroir" : "") << (Net->material ? " experts-materiel" : "") << (Net->combo ? " x materiel " + std::to_string(Net->nMat) : "")
        << (Net->pairs ? " paires-de-pions" : "") << (Net->threats ? " menaces" : "")
        << (Net->fullThreats ? " menaces-completes" : "")
        << (Net->activation == ACT_SCRELU ? " screlu" : " crelu") << "  " << NetPath;
@@ -853,7 +858,8 @@ PerspInfo persp_info(Color p, Square ksq) {
 // tools/train.py (mode "mat4"). Melange d'experts a la Triumviratus 8.0.
 inline int material_bucket(int pieceCount) {
     // bandes de 32 / experts pieces : (n - 2) / 8 pour 4 experts, (n - 2) / 4 pour 8
-    return std::clamp((pieceCount - 2) * Net->nBuckets / 32, 0, Net->nBuckets - 1);
+    const int n = Net->combo ? Net->nMat : Net->nBuckets;
+    return std::clamp((pieceCount - 2) * n / 32, 0, n - 1);
 }
 
 // Le bucket d'entree d'une perspective : par la case du roi, ou par le
@@ -861,6 +867,12 @@ inline int material_bucket(int pieceCount) {
 PerspInfo persp_info_pos(Color p, const Position& pos, Square ksq) {
     if (Net->material)
         return {std::uint8_t(material_bucket(popcount(pos.pieces()))), 0};
+    if (Net->combo)
+    {
+        PerspInfo pi = persp_info(p, ksq);
+        pi.bucket    = pi.bucket * Net->nMat + material_bucket(popcount(pos.pieces()));
+        return pi;
+    }
     return persp_info(p, ksq);
 }
 
@@ -969,7 +981,8 @@ static bool charger(std::istream& f, const std::string& path) {
     net->hidden     = int(hidden);
     net->nBuckets   = int(nBuckets);
     net->material   = mirror == 2;
-    net->mirror     = mirror == 1;
+    net->mirror     = mirror == 1 || mirror == 3;
+    net->combo      = mirror == 3;
     net->outBuckets = int(outBuckets);
     net->activation = activation;
     net->pairs      = pairs;
@@ -998,11 +1011,44 @@ static bool charger(std::istream& f, const std::string& path) {
     }
 
     f.read(reinterpret_cast<char*>(net->featureWeights), std::streamsize(wBytes));
+    if (net->combo)
+    {
+        // Ecarts par bande de materiel : nMat (uint32), puis nMat x 768 x HIDDEN_SIZE int16.
+        // Poids du bucket (roi k, bande m) = roi[k] + ecart[m], somme int16 faite ici une fois.
+        std::uint32_t nMat = 0;
+        f.read(reinterpret_cast<char*>(&nMat), 4);
+        if (!f || nMat < 1 || nMat > 8 || nBuckets * nMat > 128)
+        {
+            delete net;
+            return false;
+        }
+        const std::size_t ligne = std::size_t(BASE_INPUTS) * HIDDEN_SIZE;
+        std::vector<std::int16_t> ecarts(nMat * ligne);
+        f.read(reinterpret_cast<char*>(ecarts.data()), std::streamsize(ecarts.size() * sizeof(std::int16_t)));
+        auto* tout = static_cast<std::int16_t*>(aligned_large_pages_alloc(wBytes * nMat));
+        if (!f || !tout)
+        {
+            delete net;
+            return false;
+        }
+        for (std::size_t k = 0; k < nBuckets; ++k)
+            for (std::size_t m = 0; m < nMat; ++m)
+            {
+                const std::int16_t* r = net->featureWeights + k * ligne;
+                const std::int16_t* e = ecarts.data() + m * ligne;
+                std::int16_t*       d = tout + (k * nMat + m) * ligne;
+                for (std::size_t i = 0; i < ligne; ++i)
+                    d[i] = std::int16_t(r[i] + e[i]);
+            }
+        aligned_large_pages_free(net->featureWeights);
+        net->featureWeights = tout;
+        net->nMat           = int(nMat);
+    }
 #ifdef ONE_FT_INT8
     {
         // Copie int8 des poids, avec saturation. Un reseau entraine sans
         // plafond sur ses poids en perd quelques-uns ici : on le dit.
-        const std::size_t n = wBytes / sizeof(std::int16_t);
+        const std::size_t n = wBytes * std::size_t(net->combo ? net->nMat : 1) / sizeof(std::int16_t);
         net->featureWeights8 = static_cast<std::int8_t*>(aligned_large_pages_alloc(n));
         if (!net->featureWeights8)
             return false;
@@ -1238,7 +1284,7 @@ struct FinnyEntry {
     Bitboard      bb[COLOR_NB][PIECE_TYPE_NB];
     std::uint32_t gen = 0;
 };
-thread_local FinnyEntry Finny[COLOR_NB][64][2];
+thread_local FinnyEntry Finny[COLOR_NB][128][2];   // 128 : roi x materiel (16 x 8)
 }  // namespace
 
 void refresh_side_cached(Accumulator& acc, const Position& pos, Color p) {
@@ -2465,7 +2511,7 @@ Value evaluate(const Position& pos) {
     {
         const DirtyPiece& dp = st->dirtyPiece;
         bool              ok = dp.count > 0 && !requires_refresh(dp, WHITE) && !requires_refresh(dp, BLACK);
-        if (ok && Net->material)
+        if (ok && (Net->material || Net->combo))
         {
             int removed = 0;
             for (int k = 0; k < dp.count; ++k)
@@ -2592,7 +2638,7 @@ pas_fusion:
         // tout l'accumulateur change d'expert, pour les deux perspectives.
         // Le nombre de pieces ne fait que baisser : comparer les deux bouts
         // de la chaine suffit.
-        if (haveAncestor && Net->material)
+        if (haveAncestor && (Net->material || Net->combo))
         {
             int removed = 0;
             for (int i = 0; i < n; ++i)
