@@ -74,9 +74,10 @@ MovePicker::MovePicker(const Position&              p,
                        const PawnHistory*           pions,
                        const Move*                  meurtriers,
                        Move                         reponse,
-                       const LowPlyHistory*,
-                       int) :
-    pos(p), hPrincipal(principal), hPrises(prises), hSuites(suites), hPions(pions), coupTable(tt), prof(d) {
+                       const LowPlyHistory*         bas,
+                       int                          ply) :
+    pos(p), hPrincipal(principal), hPrises(prises), hSuites(suites), hPions(pions), hBas(bas), plyBas(ply),
+    coupTable(tt), prof(d) {
 
     refut[0] = meurtriers[0];
     refut[1] = meurtriers[1];
@@ -163,6 +164,10 @@ void MovePicker::noter() {
                 note += Tune::OrdSuite6 * (*hSuites[5])[p][a];
             note += Tune::OrdPions * (*hPions)[pawn_structure_index(pos.pawn_key())][p][a];
             note /= 8;
+            // (26-11, revue externe) l'historique des premiers plis etait tenu mais jamais lu ;
+            // LowPly > 0 l'ajoute au tri des tranquilles pres de la racine (idee de Stockfish)
+            if (Tune::LowPly && hBas && plyBas < LOW_PLY_HISTORY_SIZE)
+                note += Tune::LowPly * (*hBas)[plyBas][m->from_to()] / (1 + plyBas);
             if (pos.check_squares(type_of(p)) & a)  // un echec se regarde tot
                 note += Tune::OrdEchec;
             if (ordreMenaces)  // fuir une menace : bien ; s'y exposer : mal

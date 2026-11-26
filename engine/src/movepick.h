@@ -96,6 +96,8 @@ class MovePicker {
     const CapturePieceToHistory* hPrises    = nullptr;
     const PieceToHistory**       hSuites    = nullptr;
     const PawnHistory*           hPions     = nullptr;
+    const LowPlyHistory*         hBas       = nullptr;   // (26-11) historique des premiers plis (option LowPly)
+    int                          plyBas     = 0;
 
     Move  coupTable;
     Move  refut[3];         // deux coups meurtriers, puis la reponse au coup precedent

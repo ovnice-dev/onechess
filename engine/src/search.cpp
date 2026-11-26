@@ -645,7 +645,9 @@ Value quiescence(Position& pos, Stack* ss, Value alpha, Value beta, Depth d) {
             {
                 if (rang > 2)
                     continue;
-                const Value vFut = baseFutilite + PieceValue[pos.piece_on(m.to_sq())];
+                // (26-11, revue externe) la case d'arrivee d'une prise en passant est vide : valeur 0
+                const Value vFut = baseFutilite + ((PriseEp && m.type_of() == EN_PASSANT) ? PawnValue
+                                                                                           : PieceValue[pos.piece_on(m.to_sq())]);
                 if (vFut <= alpha)
                 {
                     meilleure = std::max(meilleure, vFut);
@@ -957,10 +959,20 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
     MovePicker tri(pos, cTable, d, &f->mainHistory, &f->captureHistory, hs, &f->pawnHistory, ss->meurtriers, reponse,
                    &f->lowPlyHistory, ss->ply);
 
-    const Bitboard menaces = threat_map(pos);  // avant que do_move ne change la position
+    // Cases attaquees par l'adversaire : seulement pour les coups tranquilles (index de l'historique
+    // principal). (26-11, revue externe) calculees au premier coup tranquille, plus a chaque noeud :
+    // la plupart des noeuds coupent sur le coup de table ou une prise. Les lecteurs de ss->menaces
+    // (recompenses, malus, coup du pere au pli suivant) ne servent qu'apres un coup tranquille joue ici.
+    Bitboard menaces       = 0;
+    bool     menacesPretes = false;
+    if (LmrTension)
+    {
+        menaces       = threat_map(pos);
+        menacesPretes = true;
+        ss->menaces   = menaces;
+    }
     // option en test : nos pieces attaquees ; a partir de LmrTension, on reduit un pli de moins
     const bool tendu = LmrTension && popcount(menaces & pos.pieces(moi) & ~pos.pieces(PAWN, KING)) >= LmrTension;
-    ss->menaces            = menaces;
     bool sauterTranquilles = false;
     v                      = meilleure;
 #ifdef PROFILE
@@ -992,6 +1004,12 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
             (ss + 1)->pv = nullptr;
 
         const bool  prise = pos.capture_stage(m);
+        if (!prise && !menacesPretes)   // avant que do_move ne change la position
+        {
+            menaces       = threat_map(pos);
+            menacesPretes = true;
+            ss->menaces   = menaces;
+        }
         const bool  echec = pos.gives_check(m);
         const Piece p     = pos.moved_piece(m);
         const Square a    = m.to_sq();
@@ -1012,7 +1030,8 @@ Value chercher(Position& pos, Stack* ss, Value alpha, Value beta, Depth d, bool 
                 {
                     const Piece prisePiece = pos.piece_on(a);
                     const int   hp         = f->captureHistory[p][a][type_of(prisePiece)];
-                    if (ss->evalStatique + PriseFutBase + PriseFutPente * dLmr + 2 * PieceValue[prisePiece] + PriseFutHist * hp / 1024 <= alpha)
+                    const Value vPrise = (PriseEp && m.type_of() == EN_PASSANT) ? PawnValue : PieceValue[prisePiece];
+                    if (ss->evalStatique + PriseFutBase + PriseFutPente * dLmr + 2 * vPrise + PriseFutHist * hp / 1024 <= alpha)
                         continue;
                 }
                 if (!pos.see_ge(m, -SeeCaptureMargin * d))

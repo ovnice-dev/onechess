@@ -1051,7 +1051,10 @@ static bool charger(std::istream& f, const std::string& path) {
         const std::size_t n = wBytes * std::size_t(net->combo ? net->nMat : 1) / sizeof(std::int16_t);
         net->featureWeights8 = static_cast<std::int8_t*>(aligned_large_pages_alloc(n));
         if (!net->featureWeights8)
+        {
+            delete net;   // (26-11, revue externe) le reseau fuyait sur ce chemin d'erreur
             return false;
+        }
         std::size_t ecretes = 0;
         for (std::size_t i = 0; i < n; ++i)
         {

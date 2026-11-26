@@ -100,7 +100,7 @@
     X(TtCopie,                        0,     0,     1) \
     X(BonusEchecFort,                 0,     0,   400) \
     X(UpRepSimple,                    0,     0,     1) \
-    X(LmrTension,                     0,     0,     8) \
+    X(LmrTension,                     0,     0,     8)     X(PriseEp,                        0,     0,     1)     X(LowPly,                         0,     0,    32) \
     X(TmTension,                      0,     0,   300) \
     X(OrdMain,                       16,     0,    48) \
     X(OrdSuite1,                     16,     0,    48) \
