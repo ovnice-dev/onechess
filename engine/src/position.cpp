@@ -1,6 +1,7 @@
 /*
-  Onechess, a UCI chess engine.
-  Copyright (C) 2026 ovnice
+  Onechess, a UCI chess engine derived from Stockfish.
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2026 ovnice (modifications)
 
   Onechess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by

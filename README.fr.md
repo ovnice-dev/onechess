@@ -2,12 +2,14 @@
 
 *[English version](README.md)*
 
-Onechess est un moteur d'échecs UCI libre, écrit en C++, avec sa propre
-évaluation NNUE (architecture, entraîneur et réseaux de son auteur). Il joue aux échecs classiques et au
+Onechess est un moteur d'échecs UCI libre, écrit en C++, **dérivé de Stockfish**
+(voir [Origine et crédits](#licence)), avec sa propre évaluation NNUE (architecture,
+entraîneur et réseaux de son auteur). Il joue aux échecs classiques et au
 Chess960, et s'utilise dans toute interface UCI (En Croissant, Cute Chess,
 Arena, Banksia…).
 
-**Auteur : ovnice** ([ovnice-dev](https://github.com/ovnice-dev)), depuis 2026.
+**Auteur : ovnice** ([ovnice-dev](https://github.com/ovnice-dev)), depuis 2026, à partir du travail
+des développeurs de Stockfish.
 
 ## Téléchargement
 
@@ -100,24 +102,23 @@ dépôt à part : [onechess-tools](https://github.com/ovnice-dev/onechess-tools)
 
 ## Licence
 
-Copyright (C) 2026 ovnice.
+Copyright (C) 2004-2026 les développeurs de Stockfish (voir [AUTHORS](AUTHORS)).
+Copyright (C) 2026 ovnice (modifications).
 
 Onechess est un logiciel libre sous **licence publique générale GNU version 3**
 (voir [LICENSE](LICENSE)). Vous pouvez l'utiliser, le modifier et le
-redistribuer, à condition de conserver cette mention et le crédit de l'auteur,
-de fournir le code source de toute version distribuée, et de la publier sous la
-même licence. Toute version dérivée doit indiquer clairement qu'elle dérive
-d'Onechess, créé par ovnice.
+redistribuer, à condition de conserver ces mentions de copyright, de fournir le
+code source de toute version distribuée, et de la publier sous la même licence.
 
-Crédits :
-- Onechess est un moteur indépendant. Son code est original, écrit pour
-  Onechess par son auteur.
-- Son évaluation NNUE (architecture à experts par matériel, code
+Origine et crédits :
+- **Onechess dérive de Stockfish** (https://github.com/official-stockfish/Stockfish, GPL-3.0).
+  Sa recherche, la représentation du plateau, la génération des coups et le code
+  associé viennent de Stockfish, avec des noms traduits en français et des
+  modifications. L'essentiel du code a été produit avec un assistant de
+  programmation IA (Claude, d'Anthropic). Les auteurs originaux sont les
+  développeurs de Stockfish, listés dans [AUTHORS](AUTHORS).
+- L'évaluation NNUE d'Onechess (architecture à experts par matériel, code
   d'inférence, entraîneurs, réseaux) est le travail de son auteur.
-- Les idées de recherche viennent de la communauté de la programmation
-  d'échecs et de nombreux moteurs libres (Stockfish, Ethereal, Berserk,
-  Koivisto, PlentyChess, Reckless et d'autres) ; elles sont citées dans les
-  commentaires du code.
 - Code tiers : **Fathom** (`engine/fathom/`, licence MIT), sondage des tables
   Syzygy.
 - Données d'entraînement : données publiques d'autojeu de Stockfish (ODbL).

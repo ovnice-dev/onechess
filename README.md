@@ -2,11 +2,13 @@
 
 *[Version française](README.fr.md)*
 
-Onechess is a free UCI chess engine written in C++, with its own NNUE
-evaluation (architecture, trainer and networks by its author). It plays standard chess and Chess960, and
+Onechess is a free UCI chess engine written in C++, **derived from Stockfish**
+(see [Origin and credits](#license)), with its own NNUE evaluation (architecture,
+trainer and networks by its author). It plays standard chess and Chess960, and
 can be used in any UCI interface (En Croissant, Cute Chess, Arena, Banksia…).
 
-**Author: ovnice** ([ovnice-dev](https://github.com/ovnice-dev)), since 2026.
+**Author: ovnice** ([ovnice-dev](https://github.com/ovnice-dev)), since 2026, based on the work of
+the Stockfish developers.
 
 ## Download
 
@@ -99,23 +101,22 @@ TPUs. The testing and training tools live in a separate repository:
 
 ## License
 
-Copyright (C) 2026 ovnice.
+Copyright (C) 2004-2026 The Stockfish developers (see [AUTHORS](AUTHORS)).
+Copyright (C) 2026 ovnice (modifications).
 
 Onechess is free software released under the **GNU General Public License
 version 3** (see [LICENSE](LICENSE)). You may use, modify and redistribute it,
-provided that you keep this copyright notice and the author's credit, provide
-the source code of any distributed version, and release it under the same
-license. Any derived version must clearly state that it is derived from
-Onechess, created by ovnice.
+provided that you keep these copyright notices, provide the source code of any
+distributed version, and release it under the same license.
 
-Credits:
-- Onechess is an independent engine. Its code is original, written for
-  Onechess by its author.
-- Its NNUE evaluation (architecture with material experts, inference code,
-  trainers, networks) is the author's own work.
-- Search ideas come from the chess programming community and many open
-  engines (Stockfish, Ethereal, Berserk, Koivisto, PlentyChess, Reckless and
-  others); they are credited in the source comments.
+Origin and credits:
+- **Onechess is derived from Stockfish** (https://github.com/official-stockfish/Stockfish, GPL-3.0).
+  Its search, board representation, move generation and related code come from
+  Stockfish, with names translated into French and modifications. Most of the
+  code was produced with an AI coding assistant (Claude, by Anthropic). The
+  original authors are the Stockfish developers, listed in [AUTHORS](AUTHORS).
+- The NNUE evaluation of Onechess (architecture with material experts,
+  inference code, trainers, networks) is the author's own work.
 - Third-party code: **Fathom** (`engine/fathom/`, MIT license) for Syzygy
   tablebase probing.
 - Training data: public Stockfish self-play data (ODbL).
